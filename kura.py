@@ -6,11 +6,11 @@ Développé à partir du travail de TIPE sur la synchronisation des oscillateurs
 
 Fonctionnalités :
 - Animation fluide en temps réel des oscillateurs sur le cercle unité.
-- Curseur (slider) interactif pour ajuster le couplage K entre 0.0 et 10.0 en direct.
-- Curseur secondaire pour ajuster la dispersion gamma des fréquences propres.
+- Curseur interactif pour ajuster le nombre d'oscillateurs N (de 1 à 1000).
+- Curseur interactif pour ajuster le couplage K (de 0.0 à 10.0).
+- Curseur interactif pour ajuster la dispersion gamma (commence à 0.0 jusqu'à 2.0).
 - Tracé en direct de l'évolution du paramètre d'ordre r(t) avec asymptote théorique.
-- Coloration des oscillateurs selon leur pulsation propre omega_i (spectre thermique).
-- Boutons Pause/Reprendre, Réinitialisation des phases, et Tirage de nouvelles fréquences.
+- Deux boutons de contrôle : Pause et Reset.
 """
 
 from collections import deque
@@ -23,11 +23,11 @@ from scipy.stats import cauchy
 
 class KuramotoInteractiveApp:
     def __init__(self, n_oscillators=120, gamma=0.5, omega_0=1.0, k_init=2.0, dt=0.015):
-        self.n = n_oscillators
-        self.gamma = gamma
-        self.omega_0 = omega_0
-        self.k = k_init
-        self.dt = dt
+        self.n = int(n_oscillators)
+        self.gamma = float(gamma)
+        self.omega_0 = float(omega_0)
+        self.k = float(k_init)
+        self.dt = float(dt)
         self.is_running = True
         self.time = 0.0
         self.r = 0.0
@@ -46,19 +46,15 @@ class KuramotoInteractiveApp:
     def _init_physics(self):
         """Initialise les phases uniformément et les fréquences selon une loi de Cauchy."""
         self.phi = np.random.uniform(-np.pi, np.pi, self.n)
-        # Écrêtage léger de Cauchy pour éviter des dérives infinies extrêmes
-        raw_omega = cauchy.rvs(loc=self.omega_0, scale=self.gamma, size=self.n)
-        self.omega = np.clip(raw_omega, self.omega_0 - 15 * self.gamma, self.omega_0 + 15 * self.gamma)
+        if self.gamma <= 0.0:
+            self.omega = np.full(self.n, self.omega_0)
+        else:
+            raw_omega = cauchy.rvs(loc=self.omega_0, scale=self.gamma, size=self.n)
+            self.omega = np.clip(raw_omega, self.omega_0 - 15 * self.gamma, self.omega_0 + 15 * self.gamma)
         self.time_history.clear()
         self.r_history.clear()
         self.time = 0.0
-
-    def _reset_phases(self):
-        """Réinitialise les phases sans modifier les fréquences propres."""
-        self.phi = np.random.uniform(-np.pi, np.pi, self.n)
-        self.time_history.clear()
-        self.r_history.clear()
-        self.time = 0.0
+        self.r = 0.0
 
     def compute_order_parameter(self):
         """
@@ -75,7 +71,6 @@ class KuramotoInteractiveApp:
     def step(self):
         """Un pas d'intégration d'Euler du modèle de Kuramoto."""
         r, psi, xb, yb = self.compute_order_parameter()
-        # d(phi_i)/dt = omega_i + K * r * sin(psi - phi_i)
         dphi = self.omega + self.k * r * np.sin(psi - self.phi)
         self.phi = (self.phi + dphi * self.dt + np.pi) % (2 * np.pi) - np.pi
         self.time += self.dt
@@ -83,26 +78,62 @@ class KuramotoInteractiveApp:
         self.r_history.append(r)
         return r, psi, xb, yb
 
+    def _get_point_size(self):
+        if self.n <= 20:
+            return 70
+        elif self.n <= 60:
+            return 50
+        elif self.n <= 150:
+            return 36
+        elif self.n <= 350:
+            return 22
+        elif self.n <= 700:
+            return 14
+        else:
+            return 8
+
+    def _get_colors(self):
+        if self.gamma <= 0.0:
+            return plt.cm.coolwarm(np.full(self.n, 0.5))
+        norm_omega = (self.omega - self.omega_0) / (3.0 * self.gamma + 1e-5)
+        norm_omega = np.clip(norm_omega, -1.0, 1.0)
+        return plt.cm.coolwarm((norm_omega + 1.0) / 2.0)
+
+    def _create_scatter(self):
+        colors = self._get_colors()
+        size = self._get_point_size()
+        return self.ax_circle.scatter(
+            np.cos(self.phi),
+            np.sin(self.phi),
+            c=colors,
+            s=size,
+            edgecolors='#0f172a' if self.n <= 300 else 'none',
+            linewidths=0.6,
+            zorder=3
+        )
+
+    def _rebuild_scatter(self):
+        if hasattr(self, 'scat') and self.scat is not None:
+            self.scat.remove()
+        self.scat = self._create_scatter()
+        self.fig.canvas.draw_idle()
+
     def _init_gui(self):
         # Palette sombre et moderne
-        self.c_bg = '#0b0f19'         # Fond général
-        self.c_card = '#151c2c'       # Fond des axes / cartes
-        self.c_text = '#e2e8f0'       # Texte principal
-        self.c_muted = '#64748b'      # Texte secondaire / axes
-        self.c_accent = '#38bdf8'     # Bleu cyan
-        self.c_sync = '#22c55e'       # Vert synchronisé
-        self.c_desync = '#ef4444'     # Rouge désynchronisé
-        self.c_gold = '#f59e0b'       # Or barycentre
+        self.c_bg = '#0b0f19'
+        self.c_card = '#151c2c'
+        self.c_text = '#e2e8f0'
+        self.c_muted = '#64748b'
+        self.c_accent = '#38bdf8'
+        self.c_sync = '#22c55e'
+        self.c_desync = '#ef4444'
+        self.c_gold = '#f59e0b'
 
         self.fig = plt.figure(figsize=(13, 7.5), facecolor=self.c_bg)
         self.fig.canvas.manager.set_window_title('KURA - Simulation Interactive de Kuramoto')
 
-        # Disposition en grille :
-        # Colonne gauche (0.05 -> 0.48) : Le cercle des oscillateurs
-        # Colonne droite (0.56 -> 0.95) : Graphique r(t) + panneau d'informations
-        # Bas (0.05 -> 0.95, hauteur 0.16) : Sliders & Boutons
-
-        self.ax_circle = self.fig.add_axes([0.04, 0.24, 0.44, 0.68], facecolor=self.c_card)
+        # Colonne gauche : Cercle des oscillateurs
+        self.ax_circle = self.fig.add_axes([0.04, 0.28, 0.44, 0.66], facecolor=self.c_card)
         self.ax_circle.set_aspect('equal')
         self.ax_circle.set_xlim(-1.45, 1.45)
         self.ax_circle.set_ylim(-1.45, 1.45)
@@ -111,31 +142,16 @@ class KuramotoInteractiveApp:
         # Cercle unité
         angles = np.linspace(0, 2 * np.pi, 300)
         self.ax_circle.plot(np.cos(angles), np.sin(angles), color='#334155', linestyle='-', linewidth=2, zorder=1)
-        # Axes de référence discrets
         self.ax_circle.axhline(0, color='#1e293b', linestyle=':', linewidth=1, zorder=0)
         self.ax_circle.axvline(0, color='#1e293b', linestyle=':', linewidth=1, zorder=0)
 
-        # Tracé du cercle du barycentre (rayon r)
+        # Cercle barycentre et flèche
         self.r_circle, = self.ax_circle.plot([], [], color=self.c_gold, linestyle='--', linewidth=1.2, alpha=0.5, zorder=2)
-
-        # Flèche / vecteur barycentre
         self.vec_line, = self.ax_circle.plot([], [], color=self.c_gold, linewidth=2.5, zorder=4)
         self.bary_pt, = self.ax_circle.plot([], [], 'o', color=self.c_gold, markersize=10, markeredgecolor='#ffffff', markeredgewidth=1.5, zorder=5)
 
-        # Oscillateurs sur le cercle
-        # Normalisation des couleurs selon omega_i
-        norm_omega = (self.omega - self.omega_0) / (3.0 * self.gamma + 1e-5)
-        norm_omega = np.clip(norm_omega, -1.0, 1.0)
-        colors = plt.cm.coolwarm((norm_omega + 1.0) / 2.0)
-        self.scat = self.ax_circle.scatter(
-            np.cos(self.phi),
-            np.sin(self.phi),
-            c=colors,
-            s=48,
-            edgecolors='#0f172a',
-            linewidths=0.6,
-            zorder=3
-        )
+        # Oscillateurs
+        self.scat = self._create_scatter()
 
         self.ax_circle_title = self.ax_circle.text(
             0, 1.32, "Cercle des phases $\\theta_i$",
@@ -143,7 +159,7 @@ class KuramotoInteractiveApp:
         )
 
         # Panneau droit : graphique de r(t)
-        self.ax_graph = self.fig.add_axes([0.56, 0.44, 0.40, 0.48], facecolor=self.c_card)
+        self.ax_graph = self.fig.add_axes([0.56, 0.46, 0.40, 0.46], facecolor=self.c_card)
         self.ax_graph.set_title("Évolution du paramètre d'ordre $r(t)$", color=self.c_text, fontsize=12, pad=10, fontweight='bold')
         self.ax_graph.set_xlabel("Temps écoulé (s)", color=self.c_muted, fontsize=10)
         self.ax_graph.set_ylabel("Cohérence $r$", color=self.c_muted, fontsize=10)
@@ -158,7 +174,7 @@ class KuramotoInteractiveApp:
         self.ax_graph.legend(loc='lower right', facecolor=self.c_card, edgecolor='#334155', labelcolor=self.c_text, fontsize=9)
 
         # Panneau d'informations textuel sous le graphique
-        self.ax_info = self.fig.add_axes([0.56, 0.24, 0.40, 0.14], facecolor=self.c_card)
+        self.ax_info = self.fig.add_axes([0.56, 0.28, 0.40, 0.14], facecolor=self.c_card)
         self.ax_info.axis('off')
         for spine in self.ax_info.spines.values():
             spine.set_color('#334155')
@@ -168,8 +184,8 @@ class KuramotoInteractiveApp:
         )
 
         # Contrôles en bas :
-        # Sliders
-        ax_slider_k = self.fig.add_axes([0.12, 0.13, 0.36, 0.035], facecolor=self.c_card)
+        # Sliders (gauche)
+        ax_slider_k = self.fig.add_axes([0.13, 0.17, 0.35, 0.032], facecolor=self.c_card)
         self.slider_k = Slider(
             ax=ax_slider_k,
             label='Couplage K ',
@@ -183,11 +199,11 @@ class KuramotoInteractiveApp:
         self._style_widget(self.slider_k, ax_slider_k)
         self.slider_k.on_changed(self._on_k_changed)
 
-        ax_slider_gamma = self.fig.add_axes([0.12, 0.06, 0.36, 0.035], facecolor=self.c_card)
+        ax_slider_gamma = self.fig.add_axes([0.13, 0.105, 0.35, 0.032], facecolor=self.c_card)
         self.slider_gamma = Slider(
             ax=ax_slider_gamma,
             label='Dispersion γ ',
-            valmin=0.05,
+            valmin=0.0,
             valmax=2.0,
             valinit=self.gamma,
             valstep=0.05,
@@ -197,21 +213,30 @@ class KuramotoInteractiveApp:
         self._style_widget(self.slider_gamma, ax_slider_gamma)
         self.slider_gamma.on_changed(self._on_gamma_changed)
 
-        # Boutons
-        ax_btn_pause = self.fig.add_axes([0.56, 0.07, 0.11, 0.07], facecolor=self.c_card)
+        ax_slider_n = self.fig.add_axes([0.13, 0.04, 0.35, 0.032], facecolor=self.c_card)
+        self.slider_n = Slider(
+            ax=ax_slider_n,
+            label='Oscillateurs N ',
+            valmin=1,
+            valmax=1000,
+            valinit=self.n,
+            valstep=1,
+            color=self.c_sync,
+            initcolor='none'
+        )
+        self._style_widget(self.slider_n, ax_slider_n)
+        self.slider_n.on_changed(self._on_n_changed)
+
+        # 2 Boutons uniquement : Pause et Reset (droite)
+        ax_btn_pause = self.fig.add_axes([0.60, 0.07, 0.15, 0.08], facecolor=self.c_card)
         self.btn_pause = Button(ax_btn_pause, 'Pause', color=self.c_card, hovercolor='#334155')
         self._style_button(self.btn_pause, self.c_accent)
         self.btn_pause.on_clicked(self._toggle_pause)
 
-        ax_btn_reset = self.fig.add_axes([0.69, 0.07, 0.12, 0.07], facecolor=self.c_card)
-        self.btn_reset = Button(ax_btn_reset, 'Mélanger phases', color=self.c_card, hovercolor='#334155')
-        self._style_button(self.btn_reset, self.c_text)
-        self.btn_reset.on_clicked(lambda event: self._reset_phases())
-
-        ax_btn_new = self.fig.add_axes([0.83, 0.07, 0.13, 0.07], facecolor=self.c_card)
-        self.btn_new = Button(ax_btn_new, 'Nouvel échantillon', color=self.c_card, hovercolor='#334155')
-        self._style_button(self.btn_new, self.c_text)
-        self.btn_new.on_clicked(lambda event: self._new_frequencies())
+        ax_btn_reset = self.fig.add_axes([0.79, 0.07, 0.15, 0.08], facecolor=self.c_card)
+        self.btn_reset = Button(ax_btn_reset, 'Reset', color=self.c_card, hovercolor='#334155')
+        self._style_button(self.btn_reset, self.c_gold)
+        self.btn_reset.on_clicked(self._reset)
 
     def _style_widget(self, slider, ax):
         ax.tick_params(colors=self.c_muted, labelsize=8)
@@ -224,7 +249,7 @@ class KuramotoInteractiveApp:
 
     def _style_button(self, btn, text_color):
         btn.label.set_color(text_color)
-        btn.label.set_fontsize(9)
+        btn.label.set_fontsize(10)
         btn.label.set_fontweight('bold')
         for spine in btn.ax.spines.values():
             spine.set_color('#334155')
@@ -234,25 +259,27 @@ class KuramotoInteractiveApp:
 
     def _on_gamma_changed(self, val):
         self.gamma = float(val)
-        # Recalculer les fréquences avec le nouveau gamma
-        self._new_frequencies()
+        self._init_physics()
+        self._rebuild_scatter()
+
+    def _on_n_changed(self, val):
+        new_n = int(round(val))
+        if new_n != self.n:
+            self.n = new_n
+            self._init_physics()
+            self._rebuild_scatter()
 
     def _toggle_pause(self, event=None):
         self.is_running = not self.is_running
         self.btn_pause.label.set_text('Reprendre' if not self.is_running else 'Pause')
         self.fig.canvas.draw_idle()
 
-    def _new_frequencies(self):
+    def _reset(self, event=None):
         self._init_physics()
-        # Mettre à jour les couleurs selon les nouvelles fréquences
-        norm_omega = (self.omega - self.omega_0) / (3.0 * self.gamma + 1e-5)
-        norm_omega = np.clip(norm_omega, -1.0, 1.0)
-        colors = plt.cm.coolwarm((norm_omega + 1.0) / 2.0)
-        self.scat.set_color(colors)
+        self._rebuild_scatter()
 
     def update(self, frame):
         if self.is_running:
-            # Plusieurs micro-pas par frame d'animation pour fluidité physique
             for _ in range(2):
                 r, psi, xb, yb = self.step()
         else:
@@ -273,8 +300,11 @@ class KuramotoInteractiveApp:
 
         # Seuil critique analytique de Kuramoto : Kc = 2 * Gamma
         kc = 2.0 * self.gamma
-        is_synchronized = self.k >= kc
-        r_inf = np.sqrt(max(0.0, 1.0 - kc / self.k)) if is_synchronized and self.k > 0 else 0.0
+        is_synchronized = self.k > kc if kc > 0 else (self.k > 0)
+        if is_synchronized and self.k > 0:
+            r_inf = np.sqrt(max(0.0, 1.0 - (kc / self.k if self.k > 0 else 0.0)))
+        else:
+            r_inf = 0.0
 
         # Mise à jour graphique r(t)
         if len(self.time_history) > 1:
@@ -339,4 +369,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

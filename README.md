@@ -10,11 +10,15 @@ Il propose une implémentation numérique complète, moderne et interactive du c
 
 Le modèle de Kuramoto décrit $N$ oscillateurs de phases $\theta_i(t)$ et de pulsations propres $\omega_i$, couplés globalement par une intensité $K$ :
 
-$$\frac{\mathrm{d}\theta_i}{\mathrm{d}t} = \omega_i + \frac{K}{N}\sum_{j=1}^N \sin(\theta_j(t) - \theta_i(t))$$
+$$
+\frac{d\theta_i}{dt} = \omega_i + \frac{K}{N}\sum_{j=1}^N \sin(\theta_j(t) - \theta_i(t))
+$$
 
 En introduisant le **paramètre d'ordre complexe** (champ moyen) :
 
-$$\vec{p}(t) = r(t)\,\mathrm{e}^{\mathrm{i}\psi(t)} = \frac{1}{N}\sum_{j=1}^N \mathrm{e}^{\mathrm{i}\theta_j(t)}$$
+$$
+\vec{p}(t) = r(t)\,e^{i\psi(t)} = \frac{1}{N}\sum_{j=1}^N e^{i\theta_j(t)}
+$$
 
 où :
 - $r(t) \in [0, 1]$ mesure le degré de cohérence (0 : désordre complet, 1 : synchronisation totale),
@@ -22,13 +26,24 @@ où :
 
 L'équation de chaque oscillateur se simplifie en interaction avec le champ moyen :
 
-$$\frac{\mathrm{d}\theta_i}{\mathrm{d}t} = \omega_i + K\,r(t)\sin(\psi(t) - \theta_i(t))$$
+$$
+\frac{d\theta_i}{dt} = \omega_i + K\,r(t)\sin(\psi(t) - \theta_i(t))
+$$
 
-Pour une distribution de fréquences propres lorentzienne (loi de Cauchy) de demi-largeur $\gamma$, la théorie analytique de Kuramoto prédit :
-1. **Un couplage critique de transition de phase** :
-   $$K_c = 2\gamma$$
-2. **Un paramètre d'ordre stationnaire asymptotique** :
-   $$r_\infty = \begin{cases} 0 & \text{si } K \le K_c \\ \sqrt{1 - \dfrac{K_c}{K}} & \text{si } K > K_c \end{cases}$$
+Pour une distribution de fréquences propres lorentzienne (loi de Cauchy) de demi-largeur $\gamma$, la théorie analytique de Kuramoto prédit un **couplage critique de transition de phase** :
+
+$$
+K_c = 2\gamma
+$$
+
+et un **paramètre d'ordre stationnaire asymptotique** :
+
+$$
+r_\infty = \begin{cases}
+0 & \text{si } K \le K_c \\
+\sqrt{1 - \frac{K_c}{K}} & \text{si } K > K_c
+\end{cases}
+$$
 
 ---
 

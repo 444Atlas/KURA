@@ -5,7 +5,7 @@ Ce projet prolonge les travaux de recherche menés lors de mon **TIPE (Session 2
 Il propose une implémentation numérique complète, moderne et interactive du **modèle de Kuramoto**, décrivant l'émergence spontanée d'une synchronisation collective au sein d'une population d'oscillateurs couplés.
 
 <p align="center">
-  <img src="kura_animation.gif" alt="Simulation interactive de Kuramoto (120 oscillateurs)" width="850">
+  <img src="kura_simulation.gif" alt="Simulation interactive de Kuramoto (120 oscillateurs)" width="850">
   <br>
   <em>Simulation interactive avec 120 oscillateurs : transition de phase vers l'état synchronisé et suivi en direct du paramètre d'ordre r(t).</em>
 </p>

@@ -7,4 +7,4 @@ __pycache__/
 *.png
 *.gif
 *.mp4
-!kura_animation.gif
+!kura_simulation.gif

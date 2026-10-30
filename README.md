@@ -6,7 +6,7 @@ Il propose une implémentation numérique complète, moderne et interactive du c
 
 ---
 
-## 📚 Contexte physique & mathématique
+## Contexte physique & mathématique
 
 Le modèle de Kuramoto décrit $N$ oscillateurs de phases $\theta_i(t)$ et de pulsations propres $\omega_i$, couplés globalement par une intensité $K$ :
 
@@ -32,20 +32,20 @@ Pour une distribution de fréquences propres lorentzienne (loi de Cauchy) de dem
 
 ---
 
-## 🗂️ Structure du dépôt
+## Structure du dépôt
 
 Le dépôt est épuré et structuré pour une lisibilité immédiate :
 
-- 📄 **`Etude_synchronisation_oscillateurs.pdf`** : Support de présentation du TIPE (Paul Laurent-Verleye, session 2025, 30 planches).
-- 🎛️ **`kura.py`** (ou **`Kura.py`**) : Application interactive en temps réel avec interface soignée :
+- **`Etude_synchronisation_oscillateurs.pdf`** : Support de présentation du TIPE (Paul Laurent-Verleye, session 2025, 30 planches).
+- **`kura.py`**  : Application interactive en temps réel avec interface soignée :
   - **Cercle unité des oscillateurs** : points colorés selon leur pulsation propre $\omega_i$, flèche et cercle doré représentant le paramètre d'ordre $\vec{p}(t)$. La taille des points s'adapte automatiquement à $N$.
   - **Slider du nombre d'oscillateurs $N \in [1, 1000]$** : ajuste la taille de la population en direct.
   - **Slider de couplage $K \in [0, 10]$** : intensité de couplage globale (transition de phase à $K_c = 2\gamma$).
   - **Slider de dispersion $\gamma \in [0, 2]$** : largeur de la distribution de Cauchy (débute à 0 pour une population homogène).
   - **Graphique dynamique de $r(t)$** avec comparaison en temps réel à l'asymptote théorique $r_\infty$.
   - **2 boutons de contrôle** : *Pause / Reprendre* et *Reset* (remise à zéro de la simulation).
-- 🔬 **`kuramoto_tipe.py`** : Moteur de simulation vectorisé permettant de reproduire numériquement toutes les figures de la présentation (instantanés du cercle, calcul statistique de $K_c$ avec barres d'incertitude, et relaxation temporelle).
-- ⚙️ **`.gitignore`** : Fichiers temporaires et caches Python exclus.
+- **`kuramoto_tipe.py`** : Moteur de simulation vectorisé permettant de reproduire numériquement toutes les figures de la présentation (instantanés du cercle, calcul statistique de $K_c$ avec barres d'incertitude, et relaxation temporelle).
+- **`.gitignore`** : Fichiers temporaires et caches Python exclus.
 
 ---
 
@@ -63,8 +63,6 @@ pip install numpy scipy matplotlib
 
 ```bash
 python3 kura.py
-# ou
-python3 Kura.py
 ```
 
 *Faites glisser le curseur de couplage $K$ : en dessous de $K_c \approx 1.0$ (pour $\gamma = 0.5$), les oscillateurs dérivent de façon désordonnée. Au-delà de $K_c$, un amas synchronisé se forme et le barycentre se déploie vers l'extérieur.*
@@ -81,7 +79,6 @@ python3 kuramoto_tipe.py --mode all
 
 ---
 
-## 👤 Auteur
+## Auteur
 
 **Paul Laurent-Verleye**  
-Option Informatique — TIPE Session 2025

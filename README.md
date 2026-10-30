@@ -80,7 +80,7 @@ pip install numpy scipy matplotlib
 python3 kura.py
 ```
 
-*Faites glisser le curseur de couplage $K$ : en dessous de $K_c \approx 1.0$ (pour $\gamma = 0.5$), les oscillateurs dérivent de façon désordonnée. Au-delà de $K_c$, un amas synchronisé se forme et le barycentre se déploie vers l'extérieur.*
+**Faites glisser le curseur de couplage $K$ : en dessous de $K_c \approx 1.0$ (pour $\gamma = 0.5$), les oscillateurs dérivent de façon désordonnée. Au-delà de $K_c$, un amas synchronisé se forme et le barycentre se déploie vers l'extérieur.**
 
 ### 3. Exécuter les simulations analytiques et générer les figures du TIPE
 

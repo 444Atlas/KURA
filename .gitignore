@@ -3,3 +3,7 @@ __pycache__/
 *$py.class
 .vscode/
 
+# Outputs de simulation / figures générées
+*.png
+*.gif
+*.mp4

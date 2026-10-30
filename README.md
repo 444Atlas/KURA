@@ -1,75 +1,86 @@
-# Modèle de Kuramoto : Synchronisation d'oscillateurs couplés
+# KURA — Synchronisation des Oscillateurs (Modèle de Kuramoto)
 
-Ce projet reprend et fait fonctionner les codes présentés dans les **Annexes 5, 6 et 7** de l'exposé de TIPE (*Étude de la synchronisation des oscillateurs*, Paul Laurent-Verleye, 2025).
+Ce projet est issu et prolonge les travaux de recherche menés lors de mon **TIPE (Session 2025)** intitulé *« Étude de la synchronisation des oscillateurs »*.
 
----
-
-## 1. Structure des fichiers
-
-| Fichier | Source | Description |
-| :--- | :--- | :--- |
-| `annexe5_animation.py` | Annexe 5 (page 28) | Animation dynamique des oscillateurs sur le cercle unité et de leur barycentre (paramètre d'ordre $\vec{p}$). |
-| `annexe6_trouver_kc.py` | Annexe 6 (page 29) | Simulation de la transition de phase et tracé de $r_\infty$ en fonction de $K$ pour identifier le couplage critique $K_c$. |
-| `annexe7_trouver_r_inf.py` | Annexe 7 (page 30) | Évolution temporelle du paramètre d'ordre $r(t)$ vers sa valeur limite stationnaire $r_\infty = \sqrt{1 - K_c/K}$. |
-| `kuramoto_complet.py` | Synthèse & Optimisation | Version modulaire, vectorisée et propre (sans récursion profonde ni variables globales). Permet de reproduire toutes les figures (Figures 4 à 13). |
+Il propose une implémentation numérique complète, moderne et interactive du célèbre **modèle de Kuramoto**, décrivant l'émergence spontanée de synchronisation collective (transition de phase) au sein d'une population d'oscillateurs couplés.
 
 ---
 
-## 2. Corrections et améliorations apportées
+## 📚 Contexte physique & mathématique
 
-### Dans `annexe5_animation.py` (Annexe 5) :
-1. **Imports manquants** : Ajout de `numpy`, `matplotlib.pyplot`, `FuncAnimation`, `cauchy` (depuis `scipy.stats`), `uniform` (depuis `random`), ainsi que `atan2` et `sqrt`.
-2. **Correction du tracé du barycentre** : Dans la version d'origine, `bari.set_data(xb, yb)` provoquait une erreur Matplotlib (`TypeError: float object is not iterable`), car `Line2D.set_data()` attend des séquences. Corrigé en `bari.set_data([xb], [yb])`.
-3. **Persistance de l'animation** : `ani` est désormais retourné pour éviter qu'il ne soit supprimé par le garbage collector.
-4. **Option d'export GIF** : Paramètre `save_path` pour exporter l'animation directement (ex. `animation_kuramoto.gif`).
+Le modèle de Kuramoto décrit $N$ oscillateurs de phases $\theta_i(t)$ et de pulsations propres $\omega_i$, couplés globalement par une intensité $K$ :
 
-### Dans `annexe6_trouver_kc.py` (Annexe 6) :
-1. **Imports manquants** : Ajout de `numpy`, `matplotlib.pyplot`, `cauchy`, `uniform`, `atan2`, `sqrt`.
-2. **Comptage des échantillons** : Dans la récursion initiale, le 10ᵉ échantillon était calculé mais non ajouté à la liste `P` avant de basculer sur le $K$ suivant. Tous les échantillons sont maintenant proprement collectés.
-3. **Superposition théorie / expérience** : Le graphique affiche à la fois les points mesurés avec leur incertitude type ($\frac{\sigma}{\sqrt{N}}$) et la courbe théorique $r_\infty(K) = \sqrt{1 - \frac{K_c}{K}}$ pour $K > K_c = 2\gamma = 1.0$.
-4. **Sauvegarde automatique** : Sauvegarde sous `figure_kc.png`.
+$$\frac{\mathrm{d}\theta_i}{\mathrm{d}t} = \omega_i + \frac{K}{N}\sum_{j=1}^N \sin(\theta_j(t) - \theta_i(t))$$
 
-### Dans `annexe7_trouver_r_inf.py` (Annexe 7) :
-1. **Imports manquants** : Ajout de `numpy`, `matplotlib.pyplot`, `cauchy`, etc.
-2. **Ajout de l'asymptote théorique** : Tracé de la droite horizontale en pointillés $r_\infty = \sqrt{1 - K_c/K} = \sqrt{1 - 1/3} \approx 0.8165$ pour comparaison directe avec la simulation (Figure 13 de la présentation).
-3. **Sauvegarde automatique** : Sauvegarde sous `figure_r_inf.png`.
+En introduisant le **paramètre d'ordre complexe** (champ moyen) :
+
+$$\vec{p}(t) = r(t)\,\mathrm{e}^{\mathrm{i}\psi(t)} = \frac{1}{N}\sum_{j=1}^N \mathrm{e}^{\mathrm{i}\theta_j(t)}$$
+
+où :
+- $r(t) \in [0, 1]$ mesure le degré de cohérence (0 : désordre complet, 1 : synchronisation totale),
+- $\psi(t)$ est la phase collective moyenne.
+
+L'équation de chaque oscillateur se simplifie en interaction avec le champ moyen :
+
+$$\frac{\mathrm{d}\theta_i}{\mathrm{d}t} = \omega_i + K\,r(t)\sin(\psi(t) - \theta_i(t))$$
+
+Pour une distribution de fréquences propres lorentzienne (loi de Cauchy) de demi-largeur $\gamma$, la théorie analytique de Kuramoto prédit :
+1. **Un couplage critique de transition de phase** :
+   $$K_c = 2\gamma$$
+2. **Un paramètre d'ordre stationnaire asymptotique** :
+   $$r_\infty = \begin{cases} 0 & \text{si } K \le K_c \\ \sqrt{1 - \dfrac{K_c}{K}} & \text{si } K > K_c \end{cases}$$
 
 ---
 
-## 3. Exécution
+## 🗂️ Structure du dépôt
 
-### Installer les dépendances :
+Le dépôt est épuré et structuré pour une lisibilité immédiate :
+
+- 📄 **`Etude_synchronisation_oscillateurs.pdf`** : Support de présentation du TIPE (Paul Laurent-Verleye, session 2025, 30 planches).
+- 🎛️ **`kura.py`** (ou **`Kura.py`**) : Application interactive en temps réel avec interface soignée :
+  - **Cercle unité des oscillateurs** : points colorés selon leur pulsation propre $\omega_i$, flèche et cercle doré représentant le paramètre d'ordre $\vec{p}(t)$.
+  - **Slider interactif $K \in [0, 10]$** : ajustement en direct de l'intensité du couplage avec transition visuelle immédiate entre désordre et synchronisation.
+  - **Slider de dispersion $\gamma$** : modifie la largeur de la distribution et déplace $K_c = 2\gamma$.
+  - **Graphique dynamique de $r(t)$** avec comparaison en temps réel à l'asymptote théorique $r_\infty$.
+  - Boutons de contrôle : Pause/Reprendre, redistribution des phases et tirage de nouvelles fréquences.
+- 🔬 **`kuramoto_tipe.py`** : Moteur de simulation vectorisé permettant de reproduire numériquement toutes les figures de la présentation (instantanés du cercle, calcul statistique de $K_c$ avec barres d'incertitude, et relaxation temporelle).
+- ⚙️ **`.gitignore`** : Fichiers temporaires et caches Python exclus.
+
+---
+
+## 🚀 Installation & Utilisation
+
+### 1. Prérequis
+
+Python 3.9+ avec les bibliothèques scientifiques usuelles :
+
 ```bash
-pip install numpy scipy matplotlib pillow
+pip install numpy scipy matplotlib
 ```
 
-### Lancer les scripts des annexes :
+### 2. Lancer l'animation interactive (Kura)
+
 ```bash
-# Annexe 5 : Animation
-python3 annexe5_animation.py
-
-# Annexe 6 : Détermination de Kc (courbe r vs K)
-python3 annexe6_trouver_kc.py
-
-# Annexe 7 : Relaxation temporelle r(t)
-python3 annexe7_trouver_r_inf.py
+python3 kura.py
+# ou
+python3 Kura.py
 ```
 
-### Script complet optimisé (`kuramoto_complet.py`) :
+*Faites glisser le curseur de couplage $K$ : en dessous de $K_c \approx 1.0$ (pour $\gamma = 0.5$), les oscillateurs dérivent de façon désordonnée. Au-delà de $K_c$, un amas synchronisé se forme et le barycentre se déploie vers l'extérieur.*
+
+### 3. Exécuter les simulations analytiques et générer les figures du TIPE
+
 ```bash
-# Générer toutes les figures et animations en mode rapide (pour test)
-python3 kuramoto_complet.py --fast
+# Générer toutes les figures de l'exposé (transition de phase, r(t), instantanés)
+python3 kuramoto_tipe.py --fast
 
-# Générer les figures avec la haute résolution complète (N = 3000)
-python3 kuramoto_complet.py --mode all
-
-# Générer uniquement l'évolution temporelle r(t)
-python3 kuramoto_complet.py --mode r_inf
-
-# Générer uniquement la transition de phase r vs K
-python3 kuramoto_complet.py --mode kc
-
-# Générer les instantanés du cercle unité (Figures 4, 5, 6)
-python3 kuramoto_complet.py --mode snapshots
+# Simulation haute résolution (N = 3000 oscillateurs)
+python3 kuramoto_tipe.py --mode all
 ```
 
+---
+
+## 👤 Auteur
+
+**Paul Laurent-Verleye**  
+Option Informatique — TIPE Session 2025

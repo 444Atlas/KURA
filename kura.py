@@ -30,6 +30,7 @@ class KuramotoInteractiveApp:
         self.dt = dt
         self.is_running = True
         self.time = 0.0
+        self.r = 0.0
 
         # Historique glissant pour le tracé de r(t)
         self.history_len = 300
@@ -68,6 +69,7 @@ class KuramotoInteractiveApp:
         yb = float(np.mean(np.sin(self.phi)))
         psi = float(np.arctan2(yb, xb))
         r = float(np.hypot(xb, yb))
+        self.r = r
         return r, psi, xb, yb
 
     def step(self):
@@ -288,8 +290,17 @@ class KuramotoInteractiveApp:
             self.line_r_inf.set_visible(False)
 
         # Panneau texte dynamique
-        status_label = "🟢 SYNCHRONISÉ (Transition de phase)" if is_synchronized else "🔴 DÉSYNCHRONISÉ (Incohérent)"
-        status_color = self.c_sync if is_synchronized else self.c_desync
+        self.r = r
+        status_label = (
+            "SYNCHRONISÉ" if is_synchronized and abs(self.r - r_inf) < 0.1
+            else "TRANSITION DE PHASE" if is_synchronized and abs(self.r - r_inf) >= 0.1
+            else "DÉSYNCHRONISÉ"
+        )
+        status_color = (
+            self.c_sync if status_label == "SYNCHRONISÉ"
+            else self.c_gold if status_label == "TRANSITION DE PHASE"
+            else self.c_desync
+        )
 
         info_str = (
             f"Régime : {status_label}\n"
@@ -328,3 +339,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

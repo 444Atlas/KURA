@@ -8,3 +8,4 @@ from kura import KuramotoInteractiveApp, main
 
 if __name__ == "__main__":
     main()
+

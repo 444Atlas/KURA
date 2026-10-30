@@ -1,8 +1,14 @@
 # KURA — Synchronisation des Oscillateurs (Modèle de Kuramoto)
 
-Ce projet est issu et prolonge les travaux de recherche menés lors de mon **TIPE (Session 2025)** intitulé *« Étude de la synchronisation des oscillateurs »*.
+Ce projet prolonge les travaux de recherche menés lors de mon **TIPE (Session 2025)** intitulé *« Étude de la synchronisation des oscillateurs »*.
 
-Il propose une implémentation numérique complète, moderne et interactive du célèbre **modèle de Kuramoto**, décrivant l'émergence spontanée de synchronisation collective (transition de phase) au sein d'une population d'oscillateurs couplés.
+Il propose une implémentation numérique complète, moderne et interactive du **modèle de Kuramoto**, décrivant l'émergence spontanée d'une synchronisation collective au sein d'une population d'oscillateurs couplés.
+
+<p align="center">
+  <img src="kura_animation.gif" alt="Simulation interactive de Kuramoto (120 oscillateurs)" width="850">
+  <br>
+  <em>Simulation interactive avec 120 oscillateurs : transition de phase vers l'état synchronisé et suivi en direct du paramètre d'ordre $r(t)$.</em>
+</p>
 
 ---
 
@@ -49,10 +55,10 @@ $$
 
 ## Structure du dépôt
 
-Le dépôt est épuré et structuré pour une lisibilité immédiate :
+Le dépôt est structuré de cette manière :
 
 - **`Etude_synchronisation_oscillateurs.pdf`** : Support de présentation du TIPE (Paul Laurent-Verleye, session 2025, 30 planches).
-- **`kura.py`**  : Application interactive en temps réel avec interface soignée :
+- **`kura.py`**  : Application interactive :
   - **Cercle unité des oscillateurs** : points colorés selon leur pulsation propre $\omega_i$, flèche et cercle doré représentant le paramètre d'ordre $\vec{p}(t)$. La taille des points s'adapte automatiquement à $N$.
   - **Slider du nombre d'oscillateurs $N \in [1, 1000]$** : ajuste la taille de la population en direct.
   - **Slider de couplage $K \in [0, 10]$** : intensité de couplage globale (transition de phase à $K_c = 2\gamma$).

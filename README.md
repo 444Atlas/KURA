@@ -7,7 +7,7 @@ Il propose une implémentation numérique complète, moderne et interactive du *
 <p align="center">
   <img src="kura_animation.gif" alt="Simulation interactive de Kuramoto (120 oscillateurs)" width="850">
   <br>
-  <em>Simulation interactive avec 120 oscillateurs : transition de phase vers l'état synchronisé et suivi en direct du paramètre d'ordre $r(t)$.</em>
+  <em>Simulation interactive avec 120 oscillateurs : transition de phase vers l'état synchronisé et suivi en direct du paramètre d'ordre r(t).</em>
 </p>
 
 ---

@@ -8,8 +8,9 @@ Fonctionnalités :
 - Animation fluide en temps réel des oscillateurs sur le cercle unité.
 - Couleurs des oscillateurs sur le cercle reflétant leur fréquence (intrinsèque ou instantanée).
 - Initialisation dynamique des phases : à 0 si w0*tau > 0 (synchronisé), ou aléatoire sur [-pi, pi] si w0*tau == 0.
-- Traînée allongée de r(t) (fenêtre glissante de 32 secondes, 4 fois plus longue).
-- Asymptote théorique r_infini rétablie et affichée en continu.
+- Alternance automatique de la fenêtre centrale :
+  * Si tau == 0 : tracé temporel de r(t) (traînée de 32 secondes) avec asymptote théorique r_infini.
+  * Si tau > 0 : histogramme de densité des phases rho(theta) avec courbe lissée et phase moyenne psi.
 - Synchronisation temporelle stricte sur l'horloge réelle (1 s simulée = 1 s réelle).
 - Curseur de pulsation w0 (de 0 à 10 rad/s) contrôlant fidèlement la vitesse réelle de rotation.
 - Curseur de couplage adimensionné K / w0 (de 0 à 1).
@@ -18,7 +19,7 @@ Fonctionnalités :
 - Matrice de connectivité structurelle du cerveau humain (AAL 90 régions HCP) issue de Hopf_Delay_Toolbox.
 - Forçage automatique de N = 90 lors de la manipulation du retard.
 - Diagramme des zones de synchronisation de Yeung & Strogatz (PRL 1999) verrouillé en déplacement,
-  respectant l'échelle exacte de la publication et le color scheme sombre du graphe de r(t).
+  respectant l'échelle exacte de la publication et le color scheme sombre du graphe.
 - Deux boutons de contrôle : Pause et Reset.
 """
 
@@ -32,6 +33,7 @@ from matplotlib.animation import FuncAnimation
 import matplotlib.patches as mpatches
 from scipy.stats import cauchy
 import scipy.io as sio
+from scipy.ndimage import gaussian_filter1d
 
 
 class KuramotoInteractiveApp:
@@ -58,7 +60,7 @@ class KuramotoInteractiveApp:
         # Chargement de la matrice de connectivité structurelle AAL (90 régions)
         self.C_aal = self._load_structural_connectivity()
 
-        # Historique glissant pour le tracé de r(t) (4x plus long : 32 s à dt=0.005 => 8000 points)
+        # Historique glissant pour le tracé de r(t) (32 s à dt=0.005 => 8000 points)
         self.history_len = 8000
         self.time_history = deque(maxlen=self.history_len)
         self.r_history = deque(maxlen=self.history_len)
@@ -90,9 +92,6 @@ class KuramotoInteractiveApp:
 
     def _init_physics(self):
         """Initialise les phases selon la valeur de w0_tau, les fréquences et le buffer circulaire."""
-        # Initialisation des phases selon w0_tau :
-        # - Si w0_tau > 0 : phases à 0 (état synchronisé pour tester la stabilité en zone à retard)
-        # - Si w0_tau == 0 : phases aléatoires uniformes sur [-pi, pi]
         if self.w0_tau > 1e-4:
             self.phi = np.zeros(self.n, dtype=np.float64)
         else:
@@ -321,8 +320,11 @@ class KuramotoInteractiveApp:
             ha='center', va='center', color=self.c_muted, fontsize=8.5
         )
 
-        # 2. Panneau central : graphique de r(t) avec traînée de 32 secondes
-        self.ax_graph = self.fig.add_axes([0.36, 0.46, 0.29, 0.46], facecolor=self.c_card)
+        # 2. Panneau central : deux vues superposées (même cadre [0.36, 0.46, 0.29, 0.46])
+        pos_center = [0.36, 0.46, 0.29, 0.46]
+
+        # 2a. Vue r(t) lorsque tau == 0
+        self.ax_graph = self.fig.add_axes(pos_center, facecolor=self.c_card)
         self.ax_graph.set_title("Évolution du paramètre d'ordre $r(t)$", color=self.c_text, fontsize=11, pad=10, fontweight='bold')
         self.ax_graph.set_xlabel("Temps écoulé (s)", color=self.c_muted, fontsize=9)
         self.ax_graph.set_ylabel("Cohérence $r$", color=self.c_muted, fontsize=9)
@@ -336,6 +338,63 @@ class KuramotoInteractiveApp:
         self.line_r, = self.ax_graph.plot([], [], color=self.c_accent, linewidth=2, label="$r(t)$ instantané")
         self.line_r_inf = self.ax_graph.axhline(1.0, color=self.c_sync, linestyle=':', linewidth=1.8, label=r"$r_\infty$ théorique")
         self.ax_graph.legend(loc='lower right', facecolor=self.c_card, edgecolor='#334155', labelcolor=self.c_text, fontsize=8)
+
+        # 2b. Vue histogramme de densité des phases rho(theta) lorsque tau > 0
+        self.ax_hist = self.fig.add_axes(pos_center, facecolor=self.c_card)
+        self.ax_hist.set_title(r"Distribution de densité des phases $\rho(\theta)$", color=self.c_text, fontsize=11, pad=10, fontweight='bold')
+        self.ax_hist.set_xlabel(r"Phase $\theta$ (rad)", color=self.c_muted, fontsize=9)
+        self.ax_hist.set_ylabel(r"Densité de probabilité $\rho(\theta)$", color=self.c_muted, fontsize=9)
+        self.ax_hist.set_xlim(-np.pi, np.pi)
+        self.ax_hist.set_ylim(0.0, 1.5)
+        self.ax_hist.set_xticks([-np.pi, -0.5 * np.pi, 0.0, 0.5 * np.pi, np.pi])
+        self.ax_hist.set_xticklabels([r'$-\pi$', r'$-\pi/2$', '0', r'$\pi/2$', r'$\pi$'], color=self.c_text, fontsize=9)
+        self.ax_hist.tick_params(colors=self.c_muted, labelsize=8)
+        for spine in self.ax_hist.spines.values():
+            spine.set_color('#334155')
+        self.ax_hist.grid(True, color='#1e293b', linestyle='--', alpha=0.7)
+
+        # Éléments graphiques de l'histogramme de phase
+        self.hist_bin_edges = np.linspace(-np.pi, np.pi, 37)
+        self.hist_bin_centers = 0.5 * (self.hist_bin_edges[:-1] + self.hist_bin_edges[1:])
+        self.hist_bin_width = self.hist_bin_edges[1] - self.hist_bin_edges[0]
+        init_counts = np.ones(36) / (2.0 * np.pi)
+
+        self.hist_bars = self.ax_hist.bar(
+            self.hist_bin_centers, init_counts,
+            width=self.hist_bin_width * 0.88,
+            color=self.c_accent,
+            alpha=0.45,
+            edgecolor=self.c_accent,
+            linewidth=0.9,
+            label=r"Densité $\rho(\theta)$"
+        )
+        self.line_density, = self.ax_hist.plot(
+            self.hist_bin_centers, init_counts,
+            color=self.c_accent,
+            linewidth=2.2,
+            label=r"Densité lissée"
+        )
+        self.line_mean_psi = self.ax_hist.axvline(
+            0.0,
+            color=self.c_gold,
+            linestyle=':',
+            linewidth=2,
+            label=r"Phase moyenne $\psi$"
+        )
+        self.line_unif = self.ax_hist.axhline(
+            1.0 / (2.0 * np.pi),
+            color=self.c_muted,
+            linestyle='--',
+            linewidth=1.2,
+            alpha=0.8,
+            label=r"Incohérence ($1/2\pi$)"
+        )
+        self.ax_hist.legend(loc='upper right', facecolor=self.c_card, edgecolor='#334155', labelcolor=self.c_text, fontsize=8)
+
+        # Affichage initial conditionné par w0_tau
+        is_delayed = (self.w0_tau > 1e-4)
+        self.ax_graph.set_visible(not is_delayed)
+        self.ax_hist.set_visible(is_delayed)
 
         # 3. Panneau droit : Diagramme de synchronisation avec retard (Yeung & Strogatz PRL 1999)
         self.ax_diag = self.fig.add_axes([0.69, 0.46, 0.28, 0.46], facecolor=self.c_card)
@@ -609,6 +668,11 @@ class KuramotoInteractiveApp:
         if self.n != 90:
             self.slider_n.set_val(90)
 
+        # Alternance automatique de la fenêtre centrale (r(t) si tau==0, histogramme si tau>0)
+        is_delayed = (self.w0_tau > 1e-4)
+        self.ax_graph.set_visible(not is_delayed)
+        self.ax_hist.set_visible(is_delayed)
+
         # Réinitialisation des phases si transition 0 <-> >0 ou grand saut
         crossed_zero = (old_w0_tau <= 1e-4 and self.w0_tau > 1e-4) or (old_w0_tau > 1e-4 and self.w0_tau <= 1e-4)
         big_jump = abs(self.w0_tau - old_w0_tau) > 0.4
@@ -629,6 +693,47 @@ class KuramotoInteractiveApp:
         self._init_phases_for_state()
         self._rebuild_scatter()
         self._update_diag_marker()
+
+    def _update_phase_histogram(self, psi):
+        """Met à jour l'histogramme de densité des phases et la phase moyenne."""
+        counts, _ = np.histogram(self.phi, bins=self.hist_bin_edges, density=True)
+        for rect, h in zip(self.hist_bars, counts):
+            rect.set_height(h)
+
+        # Courbe de densité lissée
+        smooth_counts = gaussian_filter1d(counts, sigma=1.2, mode='wrap')
+        self.line_density.set_data(self.hist_bin_centers, smooth_counts)
+
+        # Ligne de la phase moyenne psi
+        self.line_mean_psi.set_xdata([psi, psi])
+
+        # Mise à l'échelle dynamique de l'axe vertical
+        max_h = float(np.max(counts))
+        current_top = self.ax_hist.get_ylim()[1]
+        target_top = max(1.2, max_h * 1.15)
+        if abs(current_top - target_top) > 0.2:
+            self.ax_hist.set_ylim(0.0, target_top)
+
+    def _update_graph_r(self):
+        """Met à jour le tracé temporel de r(t) et l'asymptote r_inf."""
+        if len(self.time_history) > 1:
+            t_data = list(self.time_history)
+            r_data = list(self.r_history)
+            self.line_r.set_data(t_data, r_data)
+            self.ax_graph.set_xlim(max(0.0, t_data[-1] - 32.0), max(32.0, t_data[-1] + 1.0))
+
+        # Asymptote théorique r_inf
+        kc = 2.0 * self.gamma
+        if self.k > kc and self.k > 0:
+            r_inf = float(np.sqrt(max(0.0, 1.0 - (kc / self.k))))
+        elif self.gamma == 0.0 and self.k > 0:
+            r_inf = 1.0
+        else:
+            r_inf = 0.0
+
+        self.line_r_inf.set_ydata([r_inf, r_inf])
+        self.line_r_inf.set_visible(True)
+        return r_inf
 
     def update(self, frame):
         if self.is_running:
@@ -669,24 +774,22 @@ class KuramotoInteractiveApp:
         self.vec_line.set_data([0, xb], [0, yb])
         self.bary_pt.set_data([xb], [yb])
 
-        # Mise à jour graphique r(t) avec traînée 4 fois plus longue (fenêtre glissante de 32 secondes)
-        if len(self.time_history) > 1:
-            t_data = list(self.time_history)
-            r_data = list(self.r_history)
-            self.line_r.set_data(t_data, r_data)
-            self.ax_graph.set_xlim(max(0.0, t_data[-1] - 32.0), max(32.0, t_data[-1] + 1.0))
-
-        # Asymptote théorique r_inf rétablie
-        kc = 2.0 * self.gamma
-        if self.k > kc and self.k > 0:
-            r_inf = float(np.sqrt(max(0.0, 1.0 - (kc / self.k))))
-        elif self.gamma == 0.0 and self.k > 0:
-            r_inf = 1.0
+        # Alternance selon retard tau :
+        # - Si tau > 0 : histogramme de densité des phases rho(theta)
+        # - Si tau == 0 : tracé de l'évolution temporelle de r(t)
+        is_delayed = (self.w0_tau > 1e-4)
+        if is_delayed:
+            if not self.ax_hist.get_visible():
+                self.ax_graph.set_visible(False)
+                self.ax_hist.set_visible(True)
+            self._update_phase_histogram(psi)
+            kc = 2.0 * self.gamma
+            r_inf = 1.0 if (self.gamma == 0.0 and self.k > 0) else float(np.sqrt(max(0.0, 1.0 - (kc / self.k)))) if (self.k > kc and self.k > 0) else 0.0
         else:
-            r_inf = 0.0
-
-        self.line_r_inf.set_ydata([r_inf, r_inf])
-        self.line_r_inf.set_visible(True)
+            if not self.ax_graph.get_visible():
+                self.ax_hist.set_visible(False)
+                self.ax_graph.set_visible(True)
+            r_inf = self._update_graph_r()
 
         # Panneau texte dynamique
         self.r = r
@@ -702,11 +805,12 @@ class KuramotoInteractiveApp:
         zone_name = self._get_zone_name(x_diag, y_diag)
         network_info = "Connectome AAL (90 régions HCP)" if self.n == 90 else f"Tous-à-tous ({self.n} oscillateurs)"
         period_str = f"T = {2.0 * np.pi / self.omega_0:.2f} s" if self.omega_0 > 0.05 else "T = ∞ (statique)"
+        view_label = r"Densité $\rho(\theta)$" if is_delayed else "Évolution r(t)"
 
         info_str = (
-            f"Régime : {status_label}   |   Réseau : {network_info}\n"
+            f"Régime : {status_label}   |   Réseau : {network_info}   |   Vue centrale : {view_label}\n"
             f"Paramètres réduits : K/ω₀ = {self.k_over_w0:.2f}   |   ω₀·τ = {self.w0_tau / np.pi:.2f}π   |   Position : {zone_name}\n"
-            f"Physique : ω₀ = {self.omega_0:.2f} rad/s ({period_str})   |   K = {self.k:.2f}   |   τ = {self.tau:.2f} s   |   Asymptote r∞ = {r_inf:.3f}"
+            f"Physique : ω₀ = {self.omega_0:.2f} rad/s ({period_str})   |   K = {self.k:.2f}   |   τ = {self.tau:.2f} s   |   Cohérence r = {r:.3f}   |   r∞ = {r_inf:.3f}"
         )
         self.info_text.set_text(info_str)
 

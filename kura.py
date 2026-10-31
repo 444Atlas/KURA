@@ -7,6 +7,9 @@ Développé à partir du travail de TIPE sur la synchronisation des oscillateurs
 Fonctionnalités :
 - Animation fluide en temps réel des oscillateurs sur le cercle unité.
 - Couleurs des oscillateurs sur le cercle reflétant leur fréquence (intrinsèque ou instantanée).
+- Initialisation dynamique des phases : à 0 si w0*tau > 0 (synchronisé), ou aléatoire sur [-pi, pi] si w0*tau == 0.
+- Traînée allongée de r(t) (fenêtre glissante de 32 secondes, 4 fois plus longue).
+- Asymptote théorique r_infini rétablie et affichée en continu.
 - Synchronisation temporelle stricte sur l'horloge réelle (1 s simulée = 1 s réelle).
 - Curseur de pulsation w0 (de 0 à 10 rad/s) contrôlant fidèlement la vitesse réelle de rotation.
 - Curseur de couplage adimensionné K / w0 (de 0 à 1).
@@ -55,8 +58,8 @@ class KuramotoInteractiveApp:
         # Chargement de la matrice de connectivité structurelle AAL (90 régions)
         self.C_aal = self._load_structural_connectivity()
 
-        # Historique glissant pour le tracé de r(t)
-        self.history_len = 300
+        # Historique glissant pour le tracé de r(t) (4x plus long : 32 s à dt=0.005 => 8000 points)
+        self.history_len = 8000
         self.time_history = deque(maxlen=self.history_len)
         self.r_history = deque(maxlen=self.history_len)
 
@@ -86,8 +89,14 @@ class KuramotoInteractiveApp:
         return fallback_c
 
     def _init_physics(self):
-        """Initialise les phases uniformément, les fréquences et le buffer circulaire d'historique."""
-        self.phi = np.random.uniform(-np.pi, np.pi, self.n)
+        """Initialise les phases selon la valeur de w0_tau, les fréquences et le buffer circulaire."""
+        # Initialisation des phases selon w0_tau :
+        # - Si w0_tau > 0 : phases à 0 (état synchronisé pour tester la stabilité en zone à retard)
+        # - Si w0_tau == 0 : phases aléatoires uniformes sur [-pi, pi]
+        if self.w0_tau > 1e-4:
+            self.phi = np.zeros(self.n, dtype=np.float64)
+        else:
+            self.phi = np.random.uniform(-np.pi, np.pi, self.n)
 
         # Dispersions intrinsèques des fréquences autour de omega_0
         if self.gamma <= 0.0:
@@ -110,15 +119,42 @@ class KuramotoInteractiveApp:
 
         # Buffer circulaire d'historique pour le retard tau (jusqu'à 10*pi s)
         self.max_buf = int(np.ceil(10.0 * np.pi / self.dt)) + 100
-        self.history = np.tile(self.phi, (self.max_buf, 1))
+        if self.w0_tau > 1e-4:
+            self.history = np.zeros((self.max_buf, self.n), dtype=np.float64)
+        else:
+            self.history = np.tile(self.phi, (self.max_buf, 1))
         self.ptr = 0
 
         self.time_history.clear()
         self.r_history.clear()
         self.time = 0.0
-        self.r = 0.0
+        self.r = 1.0 if self.w0_tau > 1e-4 else 0.0
         self.last_real_time = None
         self.time_accumulator = 0.0
+
+    def _init_phases_for_state(self):
+        """Réinitialise les phases : à 0 si w0_tau > 0, ou sur [-pi, pi] si w0_tau == 0."""
+        if self.w0_tau > 1e-4:
+            self.phi = np.zeros(self.n, dtype=np.float64)
+            self.history = np.zeros((self.max_buf, self.n), dtype=np.float64)
+        else:
+            self.phi = np.random.uniform(-np.pi, np.pi, self.n)
+            self.history = np.tile(self.phi, (self.max_buf, 1))
+
+        self.ptr = 0
+        self.dphi = np.copy(self.omega)
+        self.time_history.clear()
+        self.r_history.clear()
+        self.time = 0.0
+        self.r = 1.0 if self.w0_tau > 1e-4 else 0.0
+        self.last_real_time = None
+        self.time_accumulator = 0.0
+
+        if hasattr(self, 'scat') and self.scat is not None:
+            x = np.cos(self.phi)
+            y = np.sin(self.phi)
+            self.scat.set_offsets(np.column_stack((x, y)))
+            self.scat.set_facecolor(self._get_colors())
 
     def compute_order_parameter(self):
         """
@@ -285,11 +321,12 @@ class KuramotoInteractiveApp:
             ha='center', va='center', color=self.c_muted, fontsize=8.5
         )
 
-        # 2. Panneau central : graphique de r(t)
+        # 2. Panneau central : graphique de r(t) avec traînée de 32 secondes
         self.ax_graph = self.fig.add_axes([0.36, 0.46, 0.29, 0.46], facecolor=self.c_card)
         self.ax_graph.set_title("Évolution du paramètre d'ordre $r(t)$", color=self.c_text, fontsize=11, pad=10, fontweight='bold')
         self.ax_graph.set_xlabel("Temps écoulé (s)", color=self.c_muted, fontsize=9)
         self.ax_graph.set_ylabel("Cohérence $r$", color=self.c_muted, fontsize=9)
+        self.ax_graph.set_xlim(0.0, 32.0)
         self.ax_graph.set_ylim(-0.02, 1.05)
         self.ax_graph.tick_params(colors=self.c_muted, labelsize=8)
         for spine in self.ax_graph.spines.values():
@@ -297,11 +334,10 @@ class KuramotoInteractiveApp:
         self.ax_graph.grid(True, color='#1e293b', linestyle='--', alpha=0.7)
 
         self.line_r, = self.ax_graph.plot([], [], color=self.c_accent, linewidth=2, label="$r(t)$ instantané")
-        self.line_r_inf = self.ax_graph.axhline(0, color=self.c_sync, linestyle=':', linewidth=1.8, label=r"$r_\infty$ théorique (sans retard)")
+        self.line_r_inf = self.ax_graph.axhline(1.0, color=self.c_sync, linestyle=':', linewidth=1.8, label=r"$r_\infty$ théorique")
         self.ax_graph.legend(loc='lower right', facecolor=self.c_card, edgecolor='#334155', labelcolor=self.c_text, fontsize=8)
 
         # 3. Panneau droit : Diagramme de synchronisation avec retard (Yeung & Strogatz PRL 1999)
-        # Verrouillé en déplacement et interactif au clic/glisser
         self.ax_diag = self.fig.add_axes([0.69, 0.46, 0.28, 0.46], facecolor=self.c_card)
         self.ax_diag.set_navigate(False)
         self.ax_diag.set_autoscale_on(False)
@@ -384,9 +420,10 @@ class KuramotoInteractiveApp:
             zorder=10
         )
 
-        # Connexion de l'interaction clic/glisser sur le diagramme pour fixer K/w0 et w0*tau
+        # Connexion des événements souris sur le diagramme et les curseurs
         self.fig.canvas.mpl_connect('button_press_event', self._on_diag_mouse)
         self.fig.canvas.mpl_connect('motion_notify_event', self._on_diag_mouse)
+        self.fig.canvas.mpl_connect('button_release_event', self._on_mouse_release)
 
         # 4. Panneau d'informations textuel sous les graphiques
         self.ax_info = self.fig.add_axes([0.36, 0.30, 0.61, 0.11], facecolor=self.c_card)
@@ -398,7 +435,7 @@ class KuramotoInteractiveApp:
             va='center', ha='left', color=self.c_text, fontsize=9.5, linespacing=1.6
         )
 
-        # 5. Contrôles en bas : 5 curseurs (3 à gauche, 2 au centre) et 2 boutons
+        # 5. Contrôles en bas : 5 curseurs et 2 boutons
         # Colonne 1 : Pulsation w0, Couplage adimensionné K / w0, Dispersion gamma
         ax_slider_w0 = self.fig.add_axes([0.10, 0.17, 0.21, 0.035], facecolor=self.c_card)
         self.slider_w0 = Slider(
@@ -506,9 +543,15 @@ class KuramotoInteractiveApp:
             if event.xdata is not None and event.ydata is not None:
                 x_target = float(np.clip(event.xdata, 0.0, 10.0 * np.pi))
                 y_target = float(np.clip(event.ydata, 0.0, 1.0))
-                # Met à jour les curseurs qui synchronisent automatiquement la physique
                 self.slider_w0_tau.set_val(x_target)
                 self.slider_k_over_w0.set_val(y_target)
+                if event.name == 'button_press_event':
+                    self._init_phases_for_state()
+
+    def _on_mouse_release(self, event):
+        """À la fin du relâchement de la souris sur le curseur de retard, réinitialise les phases."""
+        if event.inaxes == self.slider_w0_tau.ax:
+            self._init_phases_for_state()
 
     def _update_diag_marker(self):
         """Met à jour le point de position sur le diagramme de Yeung & Strogatz."""
@@ -557,12 +600,21 @@ class KuramotoInteractiveApp:
             self._rebuild_scatter()
 
     def _on_w0_tau_changed(self, val):
+        old_w0_tau = self.w0_tau
         self.w0_tau = float(val)
         self.tau = (self.w0_tau / self.omega_0) if self.omega_0 > 1e-5 else 0.0
         self.delay_steps = int(round(self.tau / self.dt))
+
         # Forcer le nombre d'oscillateurs à 90 lors du déplacement du retard
         if self.n != 90:
             self.slider_n.set_val(90)
+
+        # Réinitialisation des phases si transition 0 <-> >0 ou grand saut
+        crossed_zero = (old_w0_tau <= 1e-4 and self.w0_tau > 1e-4) or (old_w0_tau > 1e-4 and self.w0_tau <= 1e-4)
+        big_jump = abs(self.w0_tau - old_w0_tau) > 0.4
+        if crossed_zero or big_jump:
+            self._init_phases_for_state()
+
         self._update_diag_marker()
 
     def _toggle_pause(self, event=None):
@@ -574,7 +626,7 @@ class KuramotoInteractiveApp:
         self.fig.canvas.draw_idle()
 
     def _reset(self, event=None):
-        self._init_physics()
+        self._init_phases_for_state()
         self._rebuild_scatter()
         self._update_diag_marker()
 
@@ -617,21 +669,24 @@ class KuramotoInteractiveApp:
         self.vec_line.set_data([0, xb], [0, yb])
         self.bary_pt.set_data([xb], [yb])
 
-        # Mise à jour graphique r(t)
+        # Mise à jour graphique r(t) avec traînée 4 fois plus longue (fenêtre glissante de 32 secondes)
         if len(self.time_history) > 1:
             t_data = list(self.time_history)
             r_data = list(self.r_history)
             self.line_r.set_data(t_data, r_data)
-            self.ax_graph.set_xlim(max(0.0, t_data[-1] - 8.0), max(8.0, t_data[-1] + 0.5))
+            self.ax_graph.set_xlim(max(0.0, t_data[-1] - 32.0), max(32.0, t_data[-1] + 1.0))
 
-        # Ligne théorique sans retard si applicable
+        # Asymptote théorique r_inf rétablie
         kc = 2.0 * self.gamma
-        if self.tau == 0.0 and self.gamma > 0.0 and self.k > kc:
-            r_inf = np.sqrt(max(0.0, 1.0 - (kc / self.k)))
-            self.line_r_inf.set_ydata([r_inf, r_inf])
-            self.line_r_inf.set_visible(True)
+        if self.k > kc and self.k > 0:
+            r_inf = float(np.sqrt(max(0.0, 1.0 - (kc / self.k))))
+        elif self.gamma == 0.0 and self.k > 0:
+            r_inf = 1.0
         else:
-            self.line_r_inf.set_visible(False)
+            r_inf = 0.0
+
+        self.line_r_inf.set_ydata([r_inf, r_inf])
+        self.line_r_inf.set_visible(True)
 
         # Panneau texte dynamique
         self.r = r
@@ -651,7 +706,7 @@ class KuramotoInteractiveApp:
         info_str = (
             f"Régime : {status_label}   |   Réseau : {network_info}\n"
             f"Paramètres réduits : K/ω₀ = {self.k_over_w0:.2f}   |   ω₀·τ = {self.w0_tau / np.pi:.2f}π   |   Position : {zone_name}\n"
-            f"Grandeurs physiques : ω₀ = {self.omega_0:.2f} rad/s ({period_str})   |   K = {self.k:.2f}   |   τ = {self.tau:.2f} s   |   Cohérence r(t) = {r:.3f}"
+            f"Physique : ω₀ = {self.omega_0:.2f} rad/s ({period_str})   |   K = {self.k:.2f}   |   τ = {self.tau:.2f} s   |   Asymptote r∞ = {r_inf:.3f}"
         )
         self.info_text.set_text(info_str)
 

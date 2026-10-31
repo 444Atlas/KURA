@@ -6,16 +6,20 @@ Développé à partir du travail de TIPE sur la synchronisation des oscillateurs
 
 Fonctionnalités :
 - Animation fluide en temps réel des oscillateurs sur le cercle unité.
+- Synchronisation temporelle stricte sur l'horloge réelle (1 s simulée = 1 s réelle).
+- Curseur de pulsation w0 (de 0 à 10 rad/s) contrôlant fidèlement la vitesse réelle de rotation.
 - Intégration du retard temporel tau (de 0 à 10*pi) via buffer circulaire d'historique.
 - Matrice de connectivité structurelle du cerveau humain (AAL 90 régions HCP) issue de Hopf_Delay_Toolbox.
 - Forçage automatique de N = 90 lors de la manipulation du curseur de retard.
-- Diagramme des zones de synchronisation de Yeung & Strogatz (PRL 1999) avec marqueur dynamique de position.
-- Curseurs interactifs pour ajuster le couplage K, la dispersion gamma, N et le retard tau.
+- Diagramme des zones de synchronisation de Yeung & Strogatz (PRL 1999) verrouillé en navigation,
+  respectant la même échelle que l'article et le color scheme sombre du panneau de paramètre d'ordre.
+- Curseurs interactifs : Pulsation w0, Couplage K, Dispersion gamma, Oscillateurs N, Retard tau.
 - Tracé en direct de l'évolution du paramètre d'ordre r(t).
 - Deux boutons de contrôle : Pause et Reset.
 """
 
 import os
+import time
 from collections import deque
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,7 +31,7 @@ import scipy.io as sio
 
 
 class KuramotoInteractiveApp:
-    def __init__(self, n_oscillators=90, gamma=0.0, omega_0=1.0, k_init=0.8, tau_init=0.0, dt=0.015):
+    def __init__(self, n_oscillators=90, gamma=0.0, omega_0=1.0, k_init=0.8, tau_init=0.0, dt=0.005):
         self.n = int(n_oscillators)
         self.gamma = float(gamma)
         self.omega_0 = float(omega_0)
@@ -37,6 +41,10 @@ class KuramotoInteractiveApp:
         self.is_running = True
         self.time = 0.0
         self.r = 0.0
+
+        # Synchronisation stricte sur l'horloge temps réel
+        self.last_real_time = None
+        self.time_accumulator = 0.0
 
         # Chargement de la matrice de connectivité structurelle AAL (90 régions)
         self.C_aal = self._load_structural_connectivity()
@@ -74,11 +82,15 @@ class KuramotoInteractiveApp:
     def _init_physics(self):
         """Initialise les phases uniformément, les fréquences et le buffer circulaire d'historique."""
         self.phi = np.random.uniform(-np.pi, np.pi, self.n)
+
+        # Dispersions intrinsèques des fréquences autour de omega_0
         if self.gamma <= 0.0:
+            self.delta_omega = np.zeros(self.n)
             self.omega = np.full(self.n, self.omega_0)
         else:
-            raw_omega = cauchy.rvs(loc=self.omega_0, scale=self.gamma, size=self.n)
-            self.omega = np.clip(raw_omega, self.omega_0 - 15 * self.gamma, self.omega_0 + 15 * self.gamma)
+            raw_delta = cauchy.rvs(loc=0.0, scale=self.gamma, size=self.n)
+            self.delta_omega = np.clip(raw_delta, -15.0 * self.gamma, 15.0 * self.gamma)
+            self.omega = self.omega_0 + self.delta_omega
 
         # Matrice de connectivité adaptée au nombre d'oscillateurs
         if self.n == 90 and self.C_aal is not None:
@@ -87,7 +99,7 @@ class KuramotoInteractiveApp:
             self.C = np.ones((self.n, self.n), dtype=np.float64)
             np.fill_diagonal(self.C, 0.0)
 
-        # Buffer circulaire d'historique pour le retard tau
+        # Buffer circulaire d'historique pour le retard tau (jusqu'à 10*pi s)
         self.max_buf = int(np.ceil(10.0 * np.pi / self.dt)) + 100
         self.history = np.tile(self.phi, (self.max_buf, 1))
         self.ptr = 0
@@ -96,6 +108,8 @@ class KuramotoInteractiveApp:
         self.r_history.clear()
         self.time = 0.0
         self.r = 0.0
+        self.last_real_time = None
+        self.time_accumulator = 0.0
 
     def compute_order_parameter(self):
         """
@@ -146,7 +160,7 @@ class KuramotoInteractiveApp:
         x = omega_0 * tau, y = K / omega_0.
         """
         if y > 1.0:
-            return "Zone Blanche (Synchronie stable pour tout retard)"
+            return "Zone Stable (Synchronie stable pour tout retard)"
 
         # Vérification langue noire (incohérence stable, synchronie instable)
         for m in range(1, 6):
@@ -155,7 +169,7 @@ class KuramotoInteractiveApp:
                 x_left = (4.0 * m - 3.0) * np.pi / (2.0 - 2.0 * y)
                 x_right = (4.0 * m - 1.0) * np.pi / (2.0 + 2.0 * y)
                 if x_left <= x <= x_right:
-                    return "Zone Noire (Synchronie instable, incohérence stable)"
+                    return "Langue Noire (Synchronie instable, incohérence stable)"
 
         # Vérification langue grise (régime bistable)
         for m in range(1, 6):
@@ -164,9 +178,9 @@ class KuramotoInteractiveApp:
                 x_left = (4.0 * m - 3.0) * np.pi / (2.0 - y)
                 x_right = (4.0 * m - 1.0) * np.pi / (2.0 + y)
                 if x_left <= x <= x_right:
-                    return "Zone Grise (Bistable : synchronie ou incohérence selon CI)"
+                    return "Langue Grise (Bistable : synchronie ou incohérence selon CI)"
 
-        return "Zone Blanche (Synchronie stable)"
+        return "Zone Stable (Synchronie stable)"
 
     def _get_point_size(self):
         if self.n <= 20:
@@ -209,7 +223,7 @@ class KuramotoInteractiveApp:
         self.fig.canvas.draw_idle()
 
     def _init_gui(self):
-        # Palette sombre et moderne
+        # Palette sombre cohérente
         self.c_bg = '#0b0f19'
         self.c_card = '#151c2c'
         self.c_text = '#e2e8f0'
@@ -219,12 +233,13 @@ class KuramotoInteractiveApp:
         self.c_desync = '#ef4444'
         self.c_gold = '#f59e0b'
         self.c_purple = '#a855f7'
+        self.c_rose = '#f43f5e'
 
-        self.fig = plt.figure(figsize=(15.5, 8.5), facecolor=self.c_bg)
+        self.fig = plt.figure(figsize=(15.5, 8.8), facecolor=self.c_bg)
         self.fig.canvas.manager.set_window_title('KURA - Modèle de Kuramoto avec Retard et Connectome Cérébral')
 
         # 1. Panneau gauche : Cercle des phases theta_i
-        self.ax_circle = self.fig.add_axes([0.04, 0.28, 0.28, 0.64], facecolor=self.c_card)
+        self.ax_circle = self.fig.add_axes([0.04, 0.30, 0.28, 0.62], facecolor=self.c_card)
         self.ax_circle.set_aspect('equal')
         self.ax_circle.set_xlim(-1.45, 1.45)
         self.ax_circle.set_ylim(-1.45, 1.45)
@@ -249,7 +264,7 @@ class KuramotoInteractiveApp:
         )
 
         # 2. Panneau central : graphique de r(t)
-        self.ax_graph = self.fig.add_axes([0.36, 0.44, 0.29, 0.48], facecolor=self.c_card)
+        self.ax_graph = self.fig.add_axes([0.36, 0.46, 0.29, 0.46], facecolor=self.c_card)
         self.ax_graph.set_title("Évolution du paramètre d'ordre $r(t)$", color=self.c_text, fontsize=11, pad=10, fontweight='bold')
         self.ax_graph.set_xlabel("Temps écoulé (s)", color=self.c_muted, fontsize=9)
         self.ax_graph.set_ylabel("Cohérence $r$", color=self.c_muted, fontsize=9)
@@ -264,84 +279,91 @@ class KuramotoInteractiveApp:
         self.ax_graph.legend(loc='lower right', facecolor=self.c_card, edgecolor='#334155', labelcolor=self.c_text, fontsize=8)
 
         # 3. Panneau droit : Diagramme de synchronisation avec retard (Yeung & Strogatz PRL 1999)
-        self.ax_diag = self.fig.add_axes([0.69, 0.44, 0.28, 0.48], facecolor='#ffffff')
+        # Color scheme identique à ax_graph et verrouillage en déplacement (pan/zoom désactivé)
+        self.ax_diag = self.fig.add_axes([0.69, 0.46, 0.28, 0.46], facecolor=self.c_card)
+        self.ax_diag.set_navigate(False)
+        self.ax_diag.set_autoscale_on(False)
         self.ax_diag.set_title("Zones de synchronisation (Yeung & Strogatz 1999)", color=self.c_text, fontsize=11, pad=10, fontweight='bold')
 
-        # Tracé des langues d'instabilité et de bistabilité
+        # Tracé des langues avec le thème sombre (Zone blanche du papier = fond de carte, grise = ardoise, noire = noir profond)
         for m in range(1, 6):
             # Langue grise (bistabilité)
             y_max_g = 1.0 / (2.0 * m - 1.0)
             y_g = np.linspace(0.0, y_max_g, 200)
             x_left_g = (4.0 * m - 3.0) * np.pi / (2.0 - y_g)
             x_right_g = (4.0 * m - 1.0) * np.pi / (2.0 + y_g)
-            self.ax_diag.fill_betweenx(y_g, x_left_g, x_right_g, color='#d8d8d8', edgecolor='black', linewidth=1.1, zorder=2)
+            self.ax_diag.fill_betweenx(y_g, x_left_g, x_right_g, color='#475569', edgecolor='#94a3b8', linewidth=1.1, zorder=2)
 
             # Langue noire (synchronie instable)
             y_max_b = 1.0 / (2.0 * (2.0 * m - 1.0))
             y_b = np.linspace(0.0, y_max_b, 200)
             x_left_b = (4.0 * m - 3.0) * np.pi / (2.0 - 2.0 * y_b)
             x_right_b = (4.0 * m - 1.0) * np.pi / (2.0 + 2.0 * y_b)
-            self.ax_diag.fill_betweenx(y_b, x_left_b, x_right_b, color='#000000', edgecolor='black', linewidth=1.1, zorder=3)
+            self.ax_diag.fill_betweenx(y_b, x_left_b, x_right_b, color='#020617', edgecolor='#64748b', linewidth=1.1, zorder=3)
 
-        self.ax_diag.set_xlim(0.0, 10.3 * np.pi)
-        self.ax_diag.set_ylim(-0.02, 1.05)
+        self.ax_diag.set_xlim(0.0, 10.4 * np.pi)
+        self.ax_diag.set_ylim(0.0, 1.05)
+
+        # Échelle exacte de la photo : ticks intérieurs, labels identiques
+        major_ticks_y = [0.0, 0.25, 0.5, 0.75, 1.0]
+        major_labels_y = ['0', '1/4', '1/2', '3/4', '1']
+        self.ax_diag.set_yticks(major_ticks_y)
+        self.ax_diag.set_yticklabels(major_labels_y, fontsize=9.5, color=self.c_text)
 
         major_ticks_x = [0, 2 * np.pi, 4 * np.pi, 6 * np.pi, 8 * np.pi, 10 * np.pi]
         major_labels_x = ['0', r'$2\pi$', r'$4\pi$', r'$6\pi$', r'$8\pi$', r'$10\pi$']
         minor_ticks_x = [k * np.pi for k in range(1, 11, 2)]
 
         self.ax_diag.set_xticks(major_ticks_x)
-        self.ax_diag.set_xticklabels(major_labels_x, fontsize=9, color='#000000')
+        self.ax_diag.set_xticklabels(major_labels_x, fontsize=9.5, color=self.c_text)
         self.ax_diag.set_xticks(minor_ticks_x, minor=True)
 
-        major_ticks_y = [0.0, 0.25, 0.5, 0.75, 1.0]
-        major_labels_y = ['0', '1/4', '1/2', '3/4', '1']
-        self.ax_diag.set_yticks(major_ticks_y)
-        self.ax_diag.set_yticklabels(major_labels_y, fontsize=9, color='#000000')
+        self.ax_diag.tick_params(axis='both', which='both', colors=self.c_muted, direction='in')
+        self.ax_diag.tick_params(axis='both', which='major', length=6, width=1.2)
+        self.ax_diag.tick_params(axis='x', which='minor', length=3.5, width=0.9)
 
-        self.ax_diag.tick_params(axis='both', which='both', colors='black', direction='out', length=5, width=1.1)
-        self.ax_diag.tick_params(axis='x', which='minor', length=3, width=0.9)
-
-        self.ax_diag.spines['left'].set_color('black')
-        self.ax_diag.spines['left'].set_linewidth(1.3)
-        self.ax_diag.spines['bottom'].set_color('black')
-        self.ax_diag.spines['bottom'].set_linewidth(1.3)
+        self.ax_diag.spines['left'].set_color('#475569')
+        self.ax_diag.spines['left'].set_linewidth(1.4)
+        self.ax_diag.spines['bottom'].set_color('#475569')
+        self.ax_diag.spines['bottom'].set_linewidth(1.4)
         self.ax_diag.spines['top'].set_visible(False)
         self.ax_diag.spines['right'].set_visible(False)
 
-        self.ax_diag.text(10.35 * np.pi, -0.02, r'$\omega_0 \tau$', fontsize=11, color='black', va='top', ha='left')
-        self.ax_diag.text(-0.6, 1.06, r'$K / \omega_0$', fontsize=11, color='black', va='bottom', ha='left')
+        self.ax_diag.text(10.45 * np.pi, 0.0, r'$\omega_0 \tau$', fontsize=11, color=self.c_text, va='bottom', ha='left')
+        self.ax_diag.text(0.0, 1.07, r'$K / \omega_0$', fontsize=11, color=self.c_text, va='bottom', ha='left')
+        self.ax_diag.grid(True, color='#1e293b', linestyle='--', alpha=0.5, zorder=0)
 
         # Légende du diagramme
-        legend_white = mpatches.Patch(facecolor='#ffffff', edgecolor='#64748b', label='Synchronie stable')
-        legend_grey = mpatches.Patch(facecolor='#d8d8d8', edgecolor='black', label='Bistable')
-        legend_black = mpatches.Patch(facecolor='#000000', edgecolor='black', label='Incohérence stable')
-        marker_proxy = plt.Line2D([0], [0], marker='o', color='none', markerfacecolor='#ef4444', markeredgecolor='black', markersize=6, label='Position actuelle')
+        legend_card = mpatches.Patch(facecolor=self.c_card, edgecolor='#64748b', label='Synchronie stable')
+        legend_grey = mpatches.Patch(facecolor='#475569', edgecolor='#94a3b8', label='Bistable')
+        legend_black = mpatches.Patch(facecolor='#020617', edgecolor='#64748b', label='Incohérence stable')
+        marker_proxy = plt.Line2D([0], [0], marker='o', color='none', markerfacecolor=self.c_desync, markeredgecolor='#ffffff', markersize=6, label='Position courante')
 
         self.ax_diag.legend(
-            handles=[legend_white, legend_grey, legend_black, marker_proxy],
+            handles=[legend_card, legend_grey, legend_black, marker_proxy],
             loc='upper right',
             fontsize=7.5,
-            framealpha=0.95,
-            facecolor='#f8fafc',
-            edgecolor='#cbd5e1'
+            framealpha=0.9,
+            facecolor=self.c_card,
+            edgecolor='#334155',
+            labelcolor=self.c_text
         )
 
-        # Point marqueur de position actuelle sur le diagramme
+        # Point marqueur dynamique sur le diagramme
         init_x = self.omega_0 * self.tau
-        init_y = min(1.03, self.k / self.omega_0 if self.omega_0 > 0 else 0.0)
+        init_y = min(1.02, (self.k / self.omega_0) if self.omega_0 > 1e-6 else 1.0)
         self.diag_marker, = self.ax_diag.plot(
             [init_x], [init_y],
             'o',
-            color='#ef4444',
-            markeredgecolor='black',
-            markeredgewidth=1.5,
+            color=self.c_desync,
+            markeredgecolor='#ffffff',
+            markeredgewidth=1.4,
             markersize=8,
             zorder=10
         )
 
         # 4. Panneau d'informations textuel sous les graphiques
-        self.ax_info = self.fig.add_axes([0.36, 0.27, 0.61, 0.12], facecolor=self.c_card)
+        self.ax_info = self.fig.add_axes([0.36, 0.30, 0.61, 0.11], facecolor=self.c_card)
         self.ax_info.axis('off')
         for spine in self.ax_info.spines.values():
             spine.set_color('#334155')
@@ -350,9 +372,23 @@ class KuramotoInteractiveApp:
             va='center', ha='left', color=self.c_text, fontsize=9.5, linespacing=1.6
         )
 
-        # 5. Contrôles en bas : 4 curseurs (2x2) et 2 boutons
-        # Colonne 1 de curseurs : Couplage K et Dispersion gamma
-        ax_slider_k = self.fig.add_axes([0.09, 0.15, 0.22, 0.035], facecolor=self.c_card)
+        # 5. Contrôles en bas : 5 curseurs (3 à gauche, 2 au centre) et 2 boutons
+        # Colonne 1 : Pulsation w0, Couplage K, Dispersion gamma
+        ax_slider_w0 = self.fig.add_axes([0.09, 0.17, 0.22, 0.035], facecolor=self.c_card)
+        self.slider_w0 = Slider(
+            ax=ax_slider_w0,
+            label='Pulsation ω₀ ',
+            valmin=0.0,
+            valmax=10.0,
+            valinit=self.omega_0,
+            valstep=0.05,
+            color=self.c_rose,
+            initcolor='none'
+        )
+        self._style_widget(self.slider_w0, ax_slider_w0)
+        self.slider_w0.on_changed(self._on_w0_changed)
+
+        ax_slider_k = self.fig.add_axes([0.09, 0.10, 0.22, 0.035], facecolor=self.c_card)
         self.slider_k = Slider(
             ax=ax_slider_k,
             label='Couplage K ',
@@ -366,7 +402,7 @@ class KuramotoInteractiveApp:
         self._style_widget(self.slider_k, ax_slider_k)
         self.slider_k.on_changed(self._on_k_changed)
 
-        ax_slider_gamma = self.fig.add_axes([0.09, 0.07, 0.22, 0.035], facecolor=self.c_card)
+        ax_slider_gamma = self.fig.add_axes([0.09, 0.03, 0.22, 0.035], facecolor=self.c_card)
         self.slider_gamma = Slider(
             ax=ax_slider_gamma,
             label='Dispersion γ ',
@@ -380,8 +416,8 @@ class KuramotoInteractiveApp:
         self._style_widget(self.slider_gamma, ax_slider_gamma)
         self.slider_gamma.on_changed(self._on_gamma_changed)
 
-        # Colonne 2 de curseurs : Oscillateurs N et Retard tau (0 à 10 pi)
-        ax_slider_n = self.fig.add_axes([0.42, 0.15, 0.22, 0.035], facecolor=self.c_card)
+        # Colonne 2 : Oscillateurs N et Retard tau (0 à 10 pi)
+        ax_slider_n = self.fig.add_axes([0.43, 0.14, 0.22, 0.035], facecolor=self.c_card)
         self.slider_n = Slider(
             ax=ax_slider_n,
             label='Oscillateurs N ',
@@ -395,7 +431,7 @@ class KuramotoInteractiveApp:
         self._style_widget(self.slider_n, ax_slider_n)
         self.slider_n.on_changed(self._on_n_changed)
 
-        ax_slider_tau = self.fig.add_axes([0.42, 0.07, 0.22, 0.035], facecolor=self.c_card)
+        ax_slider_tau = self.fig.add_axes([0.43, 0.06, 0.22, 0.035], facecolor=self.c_card)
         self.slider_tau = Slider(
             ax=ax_slider_tau,
             label='Retard τ ',
@@ -410,12 +446,12 @@ class KuramotoInteractiveApp:
         self.slider_tau.on_changed(self._on_tau_changed)
 
         # Boutons Pause et Reset
-        ax_btn_pause = self.fig.add_axes([0.72, 0.07, 0.11, 0.09], facecolor=self.c_card)
+        ax_btn_pause = self.fig.add_axes([0.72, 0.08, 0.11, 0.08], facecolor=self.c_card)
         self.btn_pause = Button(ax_btn_pause, 'Pause', color=self.c_card, hovercolor='#334155')
         self._style_button(self.btn_pause, self.c_accent)
         self.btn_pause.on_clicked(self._toggle_pause)
 
-        ax_btn_reset = self.fig.add_axes([0.85, 0.07, 0.11, 0.09], facecolor=self.c_card)
+        ax_btn_reset = self.fig.add_axes([0.85, 0.08, 0.11, 0.08], facecolor=self.c_card)
         self.btn_reset = Button(ax_btn_reset, 'Reset', color=self.c_card, hovercolor='#334155')
         self._style_button(self.btn_reset, self.c_gold)
         self.btn_reset.on_clicked(self._reset)
@@ -441,17 +477,26 @@ class KuramotoInteractiveApp:
     def _update_diag_marker(self):
         """Met à jour le point de position sur le diagramme de Yeung & Strogatz."""
         x = self.omega_0 * self.tau
-        y = self.k / self.omega_0 if self.omega_0 > 0 else 0.0
+        y = (self.k / self.omega_0) if self.omega_0 > 1e-6 else (10.0 if self.k > 0 else 0.0)
 
-        y_plot = min(1.03, y)
+        y_plot = min(1.02, y)
         marker_style = '^' if y > 1.05 else 'o'
         self.diag_marker.set_data([x], [y_plot])
         self.diag_marker.set_marker(marker_style)
 
         zone_name = self._get_zone_name(x, y)
-        zone_short = "Synchronie" if "Blanche" in zone_name else "Bistable" if "Grise" in zone_name else "Instable"
+        zone_short = "Synchronie" if "Stable" in zone_name and "Langue" not in zone_name else "Bistable" if "Grise" in zone_name else "Instable"
         self.ax_diag.set_title(f"Zones de synchronisation ({zone_short})", color=self.c_text, fontsize=11, pad=10, fontweight='bold')
         self.fig.canvas.draw_idle()
+
+    def _on_w0_changed(self, val):
+        self.omega_0 = float(val)
+        # Recalcul des fréquences intrinsèques sans réinitialiser les phases
+        if self.gamma <= 0.0:
+            self.omega = np.full(self.n, self.omega_0)
+        else:
+            self.omega = self.omega_0 + self.delta_omega
+        self._update_diag_marker()
 
     def _on_k_changed(self, val):
         self.k = float(val)
@@ -479,6 +524,9 @@ class KuramotoInteractiveApp:
     def _toggle_pause(self, event=None):
         self.is_running = not self.is_running
         self.btn_pause.label.set_text('Reprendre' if not self.is_running else 'Pause')
+        if self.is_running:
+            self.last_real_time = None
+            self.time_accumulator = 0.0
         self.fig.canvas.draw_idle()
 
     def _reset(self, event=None):
@@ -488,8 +536,26 @@ class KuramotoInteractiveApp:
 
     def update(self, frame):
         if self.is_running:
-            for _ in range(2):
+            now = time.perf_counter()
+            if self.last_real_time is None:
+                self.last_real_time = now
+                real_elapsed = 0.0
+            else:
+                real_elapsed = now - self.last_real_time
+                self.last_real_time = now
+
+            # Plafond de sauvegarde pour éviter un emballement lors de la manipulation de fenêtre
+            real_elapsed = min(real_elapsed, 0.08)
+            self.time_accumulator += real_elapsed
+
+            stepped = False
+            while self.time_accumulator >= self.dt:
                 r, psi, xb, yb = self.step()
+                self.time_accumulator -= self.dt
+                stepped = True
+
+            if not stepped:
+                r, psi, xb, yb = self.compute_order_parameter()
         else:
             r, psi, xb, yb = self.compute_order_parameter()
 
@@ -532,13 +598,14 @@ class KuramotoInteractiveApp:
             status_label = "DÉSYNCHRONISÉ / INCOHÉRENT"
 
         x_diag = self.omega_0 * self.tau
-        y_diag = self.k / self.omega_0 if self.omega_0 > 0 else 0.0
+        y_diag = (self.k / self.omega_0) if self.omega_0 > 1e-6 else (10.0 if self.k > 0 else 0.0)
         zone_name = self._get_zone_name(x_diag, y_diag)
         network_info = "Connectome AAL (90 régions HCP)" if self.n == 90 else f"Tous-à-tous ({self.n} oscillateurs)"
+        period_str = f"T = {2.0 * np.pi / self.omega_0:.2f} s" if self.omega_0 > 0.05 else "T = ∞ (statique)"
 
         info_str = (
             f"Régime : {status_label}   |   Réseau : {network_info}\n"
-            f"Cohérence r(t) = {r:.3f}   |   Phase moyenne ψ = {psi:.2f} rad\n"
+            f"Vitesse réelle : ω₀ = {self.omega_0:.2f} rad/s ({period_str})   |   Cohérence r(t) = {r:.3f}   |   ψ = {psi:.2f} rad\n"
             f"Retard τ = {self.tau:.2f} s ({self.tau / np.pi:.2f}π)   |   Couplage K = {self.k:.2f}   |   Position : {zone_name}"
         )
         self.info_text.set_text(info_str)
@@ -553,7 +620,7 @@ class KuramotoInteractiveApp:
         self.ani = FuncAnimation(
             self.fig,
             self.update,
-            interval=25,
+            interval=20,
             blit=False,
             cache_frame_data=False
         )
@@ -567,7 +634,7 @@ def main():
         omega_0=1.0,
         k_init=0.8,
         tau_init=0.0,
-        dt=0.015
+        dt=0.005
     )
     app.run()
 

@@ -2,7 +2,7 @@
 
 Ce projet prolonge les travaux de recherche menés lors de mon **TIPE (Session 2025)** intitulé *« Étude de la synchronisation des oscillateurs »*.
 
-Il propose une implémentation numérique complète, moderne et interactive du **modèle de Kuramoto**, enrichie par l'intégration d'un **retard temporel $\tau$**, d'une **connectivité cérébrale structurelle réelle (Connectome AAL 90 régions)** et du **diagramme de stabilité des zones de synchronisation de Yeung & Strogatz (1999)**.
+Il propose une implémentation numérique complète, moderne et interactive du **modèle de Kuramoto**, enrichie par l'intégration d'un **retard temporel $\tau$**, d'une **connectivité cérébrale structurelle réelle (Connectome AAL 90 régions)**, d'une **synchronisation physique stricte sur le temps réel** et du **diagramme de stabilité des zones de synchronisation de Yeung & Strogatz (1999)**.
 
 <p align="center">
   <img src="kura_simulation.gif" alt="Simulation interactive de Kuramoto (120 oscillateurs)" width="850">
@@ -65,20 +65,20 @@ où :
 
 L'effet du retard temporel $\tau$ sur la synchronisation a été résolu analytiquement par M. K. S. Yeung et S. H. Strogatz (*Physical Review Letters*, 82(3), 648, 1999). Dans le plan $(\omega_0 \tau, K / \omega_0)$, des **langues d'instabilité (langues d'Arnold)** émergent aux retards impairs $\omega_0 \tau \approx (2m - 1)\pi$ :
 
-- **Zone blanche (Synchronie stable)** : synchronisation globale inconditionnellement stable. Pour $K / \omega_0 > 1$, la synchronie est garantie pour toute valeur de $\tau$.
-- **Zone grise (Régime bistable)** : coexistence d'un état synchronisé et d'un état incohérent stable, délimitée par :
+- **Zone stable (Synchronie stable)** : synchronisation globale inconditionnellement stable. Pour $K / \omega_0 > 1$, la synchronie est garantie pour toute valeur de $\tau$.
+- **Langue grise (Régime bistable)** : coexistence d'un état synchronisé et d'un état incohérent stable, délimitée par :
 
 $$
 \frac{(4m - 3)\pi}{2 - y} \le \omega_0\tau \le \frac{(4m - 1)\pi}{2 + y} \quad \text{avec} \quad y = \frac{K}{\omega_0} \le \frac{1}{2m - 1}
 $$
 
-- **Zone noire (Synchronie instable, incohérence stable)** : l'effet d'antiphase induit par le retard détruit la cohérence ($r \to 0$), délimitée par :
+- **Langue noire (Synchronie instable, incohérence stable)** : l'effet d'antiphase induit par le retard détruit la cohérence ($r \to 0$), délimitée par :
 
 $$
 \frac{(4m - 3)\pi}{2 - 2y} \le \omega_0\tau \le \frac{(4m - 1)\pi}{2 + 2y} \quad \text{avec} \quad y \le \frac{1}{2(2m - 1)}
 $$
 
-Un **point rouge dynamique** sur le diagramme indique en temps réel la position courante $(\omega_0 \tau, K / \omega_0)$ du système.
+Un **point marqueur dynamique** sur le diagramme indique en temps réel la position courante $(\omega_0 \tau, K / \omega_0)$ du système.
 
 ---
 
@@ -91,7 +91,9 @@ Le dépôt est structuré de cette manière :
 - **`kura.py`** : Simulateur interactif complet à 3 panneaux :
   - **Panneau gauche (Cercle des phases)** : oscillateurs $\theta_i$ sur le cercle unité, flèche et cercle doré représentant le paramètre d'ordre complexe $\vec{p}(t)$.
   - **Panneau central (Graphique temporel)** : tracé en temps réel de $r(t)$.
-  - **Panneau droit (Diagramme de Yeung & Strogatz)** : tracé analytique des zones de synchronisation avec marqueur dynamique $(\omega_0 \tau, K / \omega_0)$ indiquant la zone (blanche, grise, noire).
+  - **Panneau droit (Diagramme de Yeung & Strogatz)** : tracé analytique des zones de synchronisation verrouillé en déplacement, reprenant l'échelle exacte de l'article ($0, 1/4, 1/2, 3/4, 1$ et $0, 2\pi, \dots, 10\pi$, graduations intérieures) et le thème sombre du graphe $r(t)$.
+  - **Curseur de pulsation $\omega_0 \in [0, 10]$ rad/s** : contrôle en direct la vitesse angulaire réelle de rotation des oscillateurs ($T = 2\pi/\omega_0$).
+  - **Synchronisation temps réel stricte** : l'intégration physique à pas fixe $dt = 0.005$ s est asservie à `time.perf_counter()`, garantissant qu'une seconde simulée équivaut rigoureusement à une seconde d'horloge réelle.
   - **Curseur de retard $\tau \in [0, 10\pi]$** : ajuste la latence d'interaction. **Tout déplacement de ce curseur force automatiquement $N = 90$** pour activer le connectome AAL.
   - **Curseur de couplage $K \in [0, 10]$**, **dispersion $\gamma \in [0, 2]$** et **oscillateurs $N \in [1, 1000]$**.
   - **Contrôles** : Boutons *Pause / Reprendre* et *Reset*.
@@ -116,6 +118,7 @@ pip install numpy scipy matplotlib
 python3 kura.py
 ```
 
+- **Ajuster la vitesse de rotation** : Modifiez $\omega_0$ pour faire tourner les oscillateurs à la vitesse souhaitée (par exemple $\omega_0 = 1.0$ rad/s $\implies$ période $T = 6.28$ s, vérifiable au chronomètre).
 - **Explorer le retard temporel** : Déplacez le curseur de retard $\tau$ vers $\pi \approx 3.14$ s pour observer la désynchronisation (entrée dans la langue noire du diagramme).
 - **Stabilisation par le couplage** : Augmentez $K$ pour sortir de la langue noire et observer la resynchronisation en zone blanche.
 - **Forçage $N = 90$** : Dès que $\tau$ est modifié, la simulation bascule sur la matrice de connectivité structurelle cérébrale AAL à 90 régions.

@@ -6,15 +6,16 @@ Développé à partir du travail de TIPE sur la synchronisation des oscillateurs
 
 Fonctionnalités :
 - Animation fluide en temps réel des oscillateurs sur le cercle unité.
+- Couleurs des oscillateurs sur le cercle reflétant leur fréquence (intrinsèque ou instantanée).
 - Synchronisation temporelle stricte sur l'horloge réelle (1 s simulée = 1 s réelle).
 - Curseur de pulsation w0 (de 0 à 10 rad/s) contrôlant fidèlement la vitesse réelle de rotation.
-- Intégration du retard temporel tau (de 0 à 10*pi) via buffer circulaire d'historique.
+- Curseur de couplage adimensionné K / w0 (de 0 à 1).
+- Curseur de retard adimensionné w0 * tau (de 0 à 10*pi).
+- Sélection directe au clic/glisser sur l'image des zones de synchronisation pour fixer (w0*tau, K/w0).
 - Matrice de connectivité structurelle du cerveau humain (AAL 90 régions HCP) issue de Hopf_Delay_Toolbox.
-- Forçage automatique de N = 90 lors de la manipulation du curseur de retard.
-- Diagramme des zones de synchronisation de Yeung & Strogatz (PRL 1999) verrouillé en navigation,
-  respectant la même échelle que l'article et le color scheme sombre du panneau de paramètre d'ordre.
-- Curseurs interactifs : Pulsation w0, Couplage K, Dispersion gamma, Oscillateurs N, Retard tau.
-- Tracé en direct de l'évolution du paramètre d'ordre r(t).
+- Forçage automatique de N = 90 lors de la manipulation du retard.
+- Diagramme des zones de synchronisation de Yeung & Strogatz (PRL 1999) verrouillé en déplacement,
+  respectant l'échelle exacte de la publication et le color scheme sombre du graphe de r(t).
 - Deux boutons de contrôle : Pause et Reset.
 """
 
@@ -31,13 +32,18 @@ import scipy.io as sio
 
 
 class KuramotoInteractiveApp:
-    def __init__(self, n_oscillators=90, gamma=0.0, omega_0=1.0, k_init=0.8, tau_init=0.0, dt=0.005):
+    def __init__(self, n_oscillators=90, gamma=0.0, omega_0=1.0, k_over_w0=0.8, w0_tau=0.0, dt=0.005):
         self.n = int(n_oscillators)
         self.gamma = float(gamma)
         self.omega_0 = float(omega_0)
-        self.k = float(k_init)
-        self.tau = float(tau_init)
+        self.k_over_w0 = float(k_over_w0)
+        self.w0_tau = float(w0_tau)
         self.dt = float(dt)
+
+        # Grandeurs physiques déduites
+        self.k = self.k_over_w0 * self.omega_0
+        self.tau = (self.w0_tau / self.omega_0) if self.omega_0 > 1e-5 else 0.0
+
         self.is_running = True
         self.time = 0.0
         self.r = 0.0
@@ -92,6 +98,9 @@ class KuramotoInteractiveApp:
             self.delta_omega = np.clip(raw_delta, -15.0 * self.gamma, 15.0 * self.gamma)
             self.omega = self.omega_0 + self.delta_omega
 
+        # Vitesses instantanées initiales
+        self.dphi = np.copy(self.omega)
+
         # Matrice de connectivité adaptée au nombre d'oscillateurs
         if self.n == 90 and self.C_aal is not None:
             self.C = self.C_aal
@@ -141,6 +150,8 @@ class KuramotoInteractiveApp:
             diff = np.sin(delayed_phi[None, :] - self.phi[:, None])
             coupling = np.sum(self.C * diff, axis=1)
             dphi = self.omega + (self.k / self.n) * coupling
+
+        self.dphi = dphi
 
         # Mise à jour des phases
         self.phi = (self.phi + dphi * self.dt + np.pi) % (2 * np.pi) - np.pi
@@ -197,11 +208,18 @@ class KuramotoInteractiveApp:
             return 8
 
     def _get_colors(self):
-        if self.gamma <= 0.0:
-            return plt.cm.coolwarm(np.linspace(0.1, 0.9, self.n))
-        norm_omega = (self.omega - self.omega_0) / (3.0 * self.gamma + 1e-5)
-        norm_omega = np.clip(norm_omega, -1.0, 1.0)
-        return plt.cm.coolwarm((norm_omega + 1.0) / 2.0)
+        """
+        Calcule les couleurs des oscillateurs correspondant à leur fréquence :
+        - Si gamma > 0 : fréquence intrinsèque omega_i (identité spectrale).
+        - Si gamma == 0 : vitesse angulaire instantanée dphi/dt (permet de visualiser les clusters).
+        """
+        if self.gamma > 0.0:
+            norm = (self.omega - self.omega_0) / (2.5 * self.gamma + 1e-5)
+        else:
+            spread = max(0.15, self.k * 0.35)
+            norm = (self.dphi - self.omega_0) / spread
+        norm = np.clip(norm, -1.0, 1.0)
+        return plt.cm.coolwarm((norm + 1.0) / 2.0)
 
     def _create_scatter(self):
         colors = self._get_colors()
@@ -223,7 +241,7 @@ class KuramotoInteractiveApp:
         self.fig.canvas.draw_idle()
 
     def _init_gui(self):
-        # Palette sombre cohérente
+        # Palette sombre et moderne
         self.c_bg = '#0b0f19'
         self.c_card = '#151c2c'
         self.c_text = '#e2e8f0'
@@ -262,6 +280,10 @@ class KuramotoInteractiveApp:
             0, 1.32, r"Cercle des phases $\theta_i$",
             ha='center', va='center', color=self.c_text, fontsize=12, fontweight='bold'
         )
+        self.ax_circle.text(
+            0, -1.30, "Couleur : fréquence (Bleu = lente, Rouge = rapide)",
+            ha='center', va='center', color=self.c_muted, fontsize=8.5
+        )
 
         # 2. Panneau central : graphique de r(t)
         self.ax_graph = self.fig.add_axes([0.36, 0.46, 0.29, 0.46], facecolor=self.c_card)
@@ -279,13 +301,13 @@ class KuramotoInteractiveApp:
         self.ax_graph.legend(loc='lower right', facecolor=self.c_card, edgecolor='#334155', labelcolor=self.c_text, fontsize=8)
 
         # 3. Panneau droit : Diagramme de synchronisation avec retard (Yeung & Strogatz PRL 1999)
-        # Color scheme identique à ax_graph et verrouillage en déplacement (pan/zoom désactivé)
+        # Verrouillé en déplacement et interactif au clic/glisser
         self.ax_diag = self.fig.add_axes([0.69, 0.46, 0.28, 0.46], facecolor=self.c_card)
         self.ax_diag.set_navigate(False)
         self.ax_diag.set_autoscale_on(False)
         self.ax_diag.set_title("Zones de synchronisation (Yeung & Strogatz 1999)", color=self.c_text, fontsize=11, pad=10, fontweight='bold')
 
-        # Tracé des langues avec le thème sombre (Zone blanche du papier = fond de carte, grise = ardoise, noire = noir profond)
+        # Tracé des langues avec le thème sombre (Zone blanche = fond, grise = ardoise, noire = noir)
         for m in range(1, 6):
             # Langue grise (bistabilité)
             y_max_g = 1.0 / (2.0 * m - 1.0)
@@ -337,7 +359,7 @@ class KuramotoInteractiveApp:
         legend_card = mpatches.Patch(facecolor=self.c_card, edgecolor='#64748b', label='Synchronie stable')
         legend_grey = mpatches.Patch(facecolor='#475569', edgecolor='#94a3b8', label='Bistable')
         legend_black = mpatches.Patch(facecolor='#020617', edgecolor='#64748b', label='Incohérence stable')
-        marker_proxy = plt.Line2D([0], [0], marker='o', color='none', markerfacecolor=self.c_desync, markeredgecolor='#ffffff', markersize=6, label='Position courante')
+        marker_proxy = plt.Line2D([0], [0], marker='o', color='none', markerfacecolor=self.c_desync, markeredgecolor='#ffffff', markersize=6, label='Position courante (Cliquer pour régler)')
 
         self.ax_diag.legend(
             handles=[legend_card, legend_grey, legend_black, marker_proxy],
@@ -350,8 +372,8 @@ class KuramotoInteractiveApp:
         )
 
         # Point marqueur dynamique sur le diagramme
-        init_x = self.omega_0 * self.tau
-        init_y = min(1.02, (self.k / self.omega_0) if self.omega_0 > 1e-6 else 1.0)
+        init_x = self.w0_tau
+        init_y = min(1.02, self.k_over_w0)
         self.diag_marker, = self.ax_diag.plot(
             [init_x], [init_y],
             'o',
@@ -361,6 +383,10 @@ class KuramotoInteractiveApp:
             markersize=8,
             zorder=10
         )
+
+        # Connexion de l'interaction clic/glisser sur le diagramme pour fixer K/w0 et w0*tau
+        self.fig.canvas.mpl_connect('button_press_event', self._on_diag_mouse)
+        self.fig.canvas.mpl_connect('motion_notify_event', self._on_diag_mouse)
 
         # 4. Panneau d'informations textuel sous les graphiques
         self.ax_info = self.fig.add_axes([0.36, 0.30, 0.61, 0.11], facecolor=self.c_card)
@@ -373,8 +399,8 @@ class KuramotoInteractiveApp:
         )
 
         # 5. Contrôles en bas : 5 curseurs (3 à gauche, 2 au centre) et 2 boutons
-        # Colonne 1 : Pulsation w0, Couplage K, Dispersion gamma
-        ax_slider_w0 = self.fig.add_axes([0.09, 0.17, 0.22, 0.035], facecolor=self.c_card)
+        # Colonne 1 : Pulsation w0, Couplage adimensionné K / w0, Dispersion gamma
+        ax_slider_w0 = self.fig.add_axes([0.10, 0.17, 0.21, 0.035], facecolor=self.c_card)
         self.slider_w0 = Slider(
             ax=ax_slider_w0,
             label='Pulsation ω₀ ',
@@ -388,21 +414,21 @@ class KuramotoInteractiveApp:
         self._style_widget(self.slider_w0, ax_slider_w0)
         self.slider_w0.on_changed(self._on_w0_changed)
 
-        ax_slider_k = self.fig.add_axes([0.09, 0.10, 0.22, 0.035], facecolor=self.c_card)
-        self.slider_k = Slider(
+        ax_slider_k = self.fig.add_axes([0.10, 0.10, 0.21, 0.035], facecolor=self.c_card)
+        self.slider_k_over_w0 = Slider(
             ax=ax_slider_k,
-            label='Couplage K ',
+            label='Couplage K / ω₀ ',
             valmin=0.0,
-            valmax=10.0,
-            valinit=self.k,
-            valstep=0.05,
+            valmax=1.0,
+            valinit=self.k_over_w0,
+            valstep=0.01,
             color=self.c_accent,
             initcolor='none'
         )
-        self._style_widget(self.slider_k, ax_slider_k)
-        self.slider_k.on_changed(self._on_k_changed)
+        self._style_widget(self.slider_k_over_w0, ax_slider_k)
+        self.slider_k_over_w0.on_changed(self._on_k_over_w0_changed)
 
-        ax_slider_gamma = self.fig.add_axes([0.09, 0.03, 0.22, 0.035], facecolor=self.c_card)
+        ax_slider_gamma = self.fig.add_axes([0.10, 0.03, 0.21, 0.035], facecolor=self.c_card)
         self.slider_gamma = Slider(
             ax=ax_slider_gamma,
             label='Dispersion γ ',
@@ -416,8 +442,8 @@ class KuramotoInteractiveApp:
         self._style_widget(self.slider_gamma, ax_slider_gamma)
         self.slider_gamma.on_changed(self._on_gamma_changed)
 
-        # Colonne 2 : Oscillateurs N et Retard tau (0 à 10 pi)
-        ax_slider_n = self.fig.add_axes([0.43, 0.14, 0.22, 0.035], facecolor=self.c_card)
+        # Colonne 2 : Oscillateurs N et Retard adimensionné w0 * tau (0 à 10 pi)
+        ax_slider_n = self.fig.add_axes([0.44, 0.14, 0.21, 0.035], facecolor=self.c_card)
         self.slider_n = Slider(
             ax=ax_slider_n,
             label='Oscillateurs N ',
@@ -431,19 +457,19 @@ class KuramotoInteractiveApp:
         self._style_widget(self.slider_n, ax_slider_n)
         self.slider_n.on_changed(self._on_n_changed)
 
-        ax_slider_tau = self.fig.add_axes([0.43, 0.06, 0.22, 0.035], facecolor=self.c_card)
-        self.slider_tau = Slider(
+        ax_slider_tau = self.fig.add_axes([0.44, 0.06, 0.21, 0.035], facecolor=self.c_card)
+        self.slider_w0_tau = Slider(
             ax=ax_slider_tau,
-            label='Retard τ ',
+            label='Retard ω₀·τ ',
             valmin=0.0,
             valmax=10.0 * np.pi,
-            valinit=self.tau,
+            valinit=self.w0_tau,
             valstep=0.05,
             color=self.c_purple,
             initcolor='none'
         )
-        self._style_widget(self.slider_tau, ax_slider_tau)
-        self.slider_tau.on_changed(self._on_tau_changed)
+        self._style_widget(self.slider_w0_tau, ax_slider_tau)
+        self.slider_w0_tau.on_changed(self._on_w0_tau_changed)
 
         # Boutons Pause et Reset
         ax_btn_pause = self.fig.add_axes([0.72, 0.08, 0.11, 0.08], facecolor=self.c_card)
@@ -474,13 +500,23 @@ class KuramotoInteractiveApp:
         for spine in btn.ax.spines.values():
             spine.set_color('#334155')
 
+    def _on_diag_mouse(self, event):
+        """Permet de cliquer ou glisser sur l'image pour fixer K/w0 et w0*tau."""
+        if event.inaxes == self.ax_diag and event.button == 1:
+            if event.xdata is not None and event.ydata is not None:
+                x_target = float(np.clip(event.xdata, 0.0, 10.0 * np.pi))
+                y_target = float(np.clip(event.ydata, 0.0, 1.0))
+                # Met à jour les curseurs qui synchronisent automatiquement la physique
+                self.slider_w0_tau.set_val(x_target)
+                self.slider_k_over_w0.set_val(y_target)
+
     def _update_diag_marker(self):
         """Met à jour le point de position sur le diagramme de Yeung & Strogatz."""
-        x = self.omega_0 * self.tau
-        y = (self.k / self.omega_0) if self.omega_0 > 1e-6 else (10.0 if self.k > 0 else 0.0)
+        x = self.w0_tau
+        y = self.k_over_w0
 
         y_plot = min(1.02, y)
-        marker_style = '^' if y > 1.05 else 'o'
+        marker_style = '^' if y > 1.0 else 'o'
         self.diag_marker.set_data([x], [y_plot])
         self.diag_marker.set_marker(marker_style)
 
@@ -491,6 +527,11 @@ class KuramotoInteractiveApp:
 
     def _on_w0_changed(self, val):
         self.omega_0 = float(val)
+        # Met à jour K et tau physiques associés aux coordonnées adimensionnées
+        self.k = self.k_over_w0 * self.omega_0
+        self.tau = (self.w0_tau / self.omega_0) if self.omega_0 > 1e-5 else 0.0
+        self.delay_steps = int(round(self.tau / self.dt))
+
         # Recalcul des fréquences intrinsèques sans réinitialiser les phases
         if self.gamma <= 0.0:
             self.omega = np.full(self.n, self.omega_0)
@@ -498,8 +539,9 @@ class KuramotoInteractiveApp:
             self.omega = self.omega_0 + self.delta_omega
         self._update_diag_marker()
 
-    def _on_k_changed(self, val):
-        self.k = float(val)
+    def _on_k_over_w0_changed(self, val):
+        self.k_over_w0 = float(val)
+        self.k = self.k_over_w0 * self.omega_0
         self._update_diag_marker()
 
     def _on_gamma_changed(self, val):
@@ -514,9 +556,11 @@ class KuramotoInteractiveApp:
             self._init_physics()
             self._rebuild_scatter()
 
-    def _on_tau_changed(self, val):
-        self.tau = float(val)
-        # Forcer le nombre d'oscillateurs à 90 lors du déplacement du curseur de retard
+    def _on_w0_tau_changed(self, val):
+        self.w0_tau = float(val)
+        self.tau = (self.w0_tau / self.omega_0) if self.omega_0 > 1e-5 else 0.0
+        self.delay_steps = int(round(self.tau / self.dt))
+        # Forcer le nombre d'oscillateurs à 90 lors du déplacement du retard
         if self.n != 90:
             self.slider_n.set_val(90)
         self._update_diag_marker()
@@ -544,7 +588,7 @@ class KuramotoInteractiveApp:
                 real_elapsed = now - self.last_real_time
                 self.last_real_time = now
 
-            # Plafond de sauvegarde pour éviter un emballement lors de la manipulation de fenêtre
+            # Plafond de sauvegarde pour éviter un emballement
             real_elapsed = min(real_elapsed, 0.08)
             self.time_accumulator += real_elapsed
 
@@ -559,10 +603,11 @@ class KuramotoInteractiveApp:
         else:
             r, psi, xb, yb = self.compute_order_parameter()
 
-        # Mise à jour des oscillateurs sur le cercle
+        # Mise à jour des oscillateurs sur le cercle (positions et couleurs selon fréquence)
         x = np.cos(self.phi)
         y = np.sin(self.phi)
         self.scat.set_offsets(np.column_stack((x, y)))
+        self.scat.set_facecolor(self._get_colors())
 
         # Cercle barycentrique de rayon r
         angles = np.linspace(0, 2 * np.pi, 100)
@@ -597,16 +642,16 @@ class KuramotoInteractiveApp:
         else:
             status_label = "DÉSYNCHRONISÉ / INCOHÉRENT"
 
-        x_diag = self.omega_0 * self.tau
-        y_diag = (self.k / self.omega_0) if self.omega_0 > 1e-6 else (10.0 if self.k > 0 else 0.0)
+        x_diag = self.w0_tau
+        y_diag = self.k_over_w0
         zone_name = self._get_zone_name(x_diag, y_diag)
         network_info = "Connectome AAL (90 régions HCP)" if self.n == 90 else f"Tous-à-tous ({self.n} oscillateurs)"
         period_str = f"T = {2.0 * np.pi / self.omega_0:.2f} s" if self.omega_0 > 0.05 else "T = ∞ (statique)"
 
         info_str = (
             f"Régime : {status_label}   |   Réseau : {network_info}\n"
-            f"Vitesse réelle : ω₀ = {self.omega_0:.2f} rad/s ({period_str})   |   Cohérence r(t) = {r:.3f}   |   ψ = {psi:.2f} rad\n"
-            f"Retard τ = {self.tau:.2f} s ({self.tau / np.pi:.2f}π)   |   Couplage K = {self.k:.2f}   |   Position : {zone_name}"
+            f"Paramètres réduits : K/ω₀ = {self.k_over_w0:.2f}   |   ω₀·τ = {self.w0_tau / np.pi:.2f}π   |   Position : {zone_name}\n"
+            f"Grandeurs physiques : ω₀ = {self.omega_0:.2f} rad/s ({period_str})   |   K = {self.k:.2f}   |   τ = {self.tau:.2f} s   |   Cohérence r(t) = {r:.3f}"
         )
         self.info_text.set_text(info_str)
 
@@ -632,8 +677,8 @@ def main():
         n_oscillators=90,
         gamma=0.0,
         omega_0=1.0,
-        k_init=0.8,
-        tau_init=0.0,
+        k_over_w0=0.8,
+        w0_tau=0.0,
         dt=0.005
     )
     app.run()

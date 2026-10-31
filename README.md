@@ -2,7 +2,7 @@
 
 Ce projet prolonge les travaux de recherche menés lors de mon **TIPE (Session 2025)** intitulé *« Étude de la synchronisation des oscillateurs »*.
 
-Il propose une implémentation numérique complète, moderne et interactive du **modèle de Kuramoto**, enrichie par l'intégration d'un **retard temporel $\tau$**, d'une **connectivité cérébrale structurelle réelle (Connectome AAL 90 régions)**, d'une **synchronisation physique stricte sur le temps réel** et du **diagramme de stabilité des zones de synchronisation de Yeung & Strogatz (1999)**.
+Il propose une implémentation numérique complète, moderne et interactive du **modèle de Kuramoto**, enrichie par l'intégration d'un **retard temporel $\tau$**, d'une **connectivité cérébrale structurelle réelle (Connectome AAL 90 régions)**, d'une **synchronisation physique stricte sur le temps réel** et du **diagramme de stabilité des zones de synchronisation de Yeung & Strogatz (1999)** interactif au clic.
 
 <p align="center">
   <img src="kura_simulation.gif" alt="Simulation interactive de Kuramoto (120 oscillateurs)" width="850">
@@ -78,7 +78,7 @@ $$
 \frac{(4m - 3)\pi}{2 - 2y} \le \omega_0\tau \le \frac{(4m - 1)\pi}{2 + 2y} \quad \text{avec} \quad y \le \frac{1}{2(2m - 1)}
 $$
 
-Un **point marqueur dynamique** sur le diagramme indique en temps réel la position courante $(\omega_0 \tau, K / \omega_0)$ du système.
+Un **point marqueur dynamique** sur le diagramme indique en temps réel la position courante $(\omega_0 \tau, K / \omega_0)$ du système. **On peut cliquer ou glisser directement sur le diagramme pour positionner instantanément le système dans la zone souhaitée.**
 
 ---
 
@@ -89,13 +89,14 @@ Le dépôt est structuré de cette manière :
 - **`Etude_synchronisation_oscillateurs.pdf`** : Support de présentation du TIPE (Paul Laurent-Verleye, session 2025, 30 planches).
 - **`SC_90aal_32HCP.mat`** : Matrice de connectivité structurelle du cerveau humain (atlas AAL, 90 aires corticales/sous-corticales, issue de la boîte à outils *Hopf Delay Toolbox* et du projet Human Connectome Project).
 - **`kura.py`** : Simulateur interactif complet à 3 panneaux :
-  - **Panneau gauche (Cercle des phases)** : oscillateurs $\theta_i$ sur le cercle unité, flèche et cercle doré représentant le paramètre d'ordre complexe $\vec{p}(t)$.
+  - **Panneau gauche (Cercle des phases)** : oscillateurs $\theta_i$ sur le cercle unité, flèche et cercle doré représentant le paramètre d'ordre complexe $\vec{p}(t)$. **La couleur de chaque oscillateur correspond à sa fréquence** (bleu = plus lent, rouge = plus rapide) pour identifier clairement les clusters en zone grise.
   - **Panneau central (Graphique temporel)** : tracé en temps réel de $r(t)$.
-  - **Panneau droit (Diagramme de Yeung & Strogatz)** : tracé analytique des zones de synchronisation verrouillé en déplacement, reprenant l'échelle exacte de l'article ($0, 1/4, 1/2, 3/4, 1$ et $0, 2\pi, \dots, 10\pi$, graduations intérieures) et le thème sombre du graphe $r(t)$.
+  - **Panneau droit (Diagramme de Yeung & Strogatz)** : tracé analytique des zones de synchronisation avec sélection au clic/glisser pour fixer $(\omega_0\tau, K/\omega_0)$, verrouillé contre les déplacements parasites, à l'échelle exacte de la publication et assorti au thème sombre.
   - **Curseur de pulsation $\omega_0 \in [0, 10]$ rad/s** : contrôle en direct la vitesse angulaire réelle de rotation des oscillateurs ($T = 2\pi/\omega_0$).
+  - **Curseur de couplage adimensionné $K / \omega_0 \in [0, 1]$** : paramètre vertical du diagramme de stabilité.
+  - **Curseur de retard adimensionné $\omega_0 \cdot \tau \in [0, 10\pi]$** : paramètre horizontal du diagramme de stabilité. Tout déplacement force automatiquement $N = 90$ pour activer le connectome AAL.
   - **Synchronisation temps réel stricte** : l'intégration physique à pas fixe $dt = 0.005$ s est asservie à `time.perf_counter()`, garantissant qu'une seconde simulée équivaut rigoureusement à une seconde d'horloge réelle.
-  - **Curseur de retard $\tau \in [0, 10\pi]$** : ajuste la latence d'interaction. **Tout déplacement de ce curseur force automatiquement $N = 90$** pour activer le connectome AAL.
-  - **Curseur de couplage $K \in [0, 10]$**, **dispersion $\gamma \in [0, 2]$** et **oscillateurs $N \in [1, 1000]$**.
+  - **Curseur de dispersion $\gamma \in [0, 2]$** et **oscillateurs $N \in [1, 1000]$**.
   - **Contrôles** : Boutons *Pause / Reprendre* et *Reset*.
 - **`kuramoto_tipe.py`** : Moteur de simulation vectorisé permettant de reproduire numériquement toutes les figures de la présentation (instantanés du cercle, calcul statistique de $K_c$ avec barres d'incertitude, et relaxation temporelle).
 - **`.gitignore`** : Fichiers temporaires et caches Python exclus.
@@ -118,10 +119,10 @@ pip install numpy scipy matplotlib
 python3 kura.py
 ```
 
+- **Sélection au clic** : Cliquez directement sur le diagramme de droite (sur une langue noire ou grise) pour voir immédiatement l'impact sur le cercle des phases et sur $r(t)$.
+- **Observer les clusters** : En zone grise, les oscillateurs forment des groupes de fréquences et de phases distinctes, identifiables grâce à leur code couleur.
 - **Ajuster la vitesse de rotation** : Modifiez $\omega_0$ pour faire tourner les oscillateurs à la vitesse souhaitée (par exemple $\omega_0 = 1.0$ rad/s $\implies$ période $T = 6.28$ s, vérifiable au chronomètre).
-- **Explorer le retard temporel** : Déplacez le curseur de retard $\tau$ vers $\pi \approx 3.14$ s pour observer la désynchronisation (entrée dans la langue noire du diagramme).
-- **Stabilisation par le couplage** : Augmentez $K$ pour sortir de la langue noire et observer la resynchronisation en zone blanche.
-- **Forçage $N = 90$** : Dès que $\tau$ est modifié, la simulation bascule sur la matrice de connectivité structurelle cérébrale AAL à 90 régions.
+- **Forçage $N = 90$** : Dès que $\omega_0\tau$ est modifié, la simulation bascule sur la matrice de connectivité structurelle cérébrale AAL à 90 régions.
 
 ### 3. Exécuter les simulations analytiques du TIPE
 

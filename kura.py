@@ -6,11 +6,11 @@ Développé à partir du travail de TIPE sur la synchronisation des oscillateurs
 
 Fonctionnalités :
 - Animation fluide en temps réel des oscillateurs sur le cercle unité.
-- Couleurs des oscillateurs sur le cercle reflétant leur fréquence (intrinsèque ou instantanée).
+- Couleurs des oscillateurs sur le cercle : plus rouge quand la fréquence est proche de la moyenne, plus bleue quand elle s'en éloigne.
 - Conservation dynamique continue des phases (aucun reset automatique lors des modifications de retard pour explorer l'hystérèse et la bistabilité).
 - Alternance automatique de la fenêtre centrale :
   * Si tau == 0 : tracé temporel de r(t) (traînée de 32 secondes) avec asymptote théorique r_infini.
-  * Si tau > 0 : distribution de densité des fréquences instantanées g(dphi/dt) avec profil lissé, pulsation w0 nominale et fréquence moyenne.
+  * Si tau > 0 : histogramme de densité de l'écart à la phase collective moyenne rho(theta - psi) sur [-pi, pi] avec profil lissé et repère d'incohérence.
 - Synchronisation temporelle stricte sur l'horloge réelle (1 s simulée = 1 s réelle).
 - Curseur de pulsation w0 (de 0 à 10 rad/s) contrôlant fidèlement la vitesse réelle de rotation.
 - Curseur de couplage adimensionné K / w0 (de 0 à 1).
@@ -328,17 +328,15 @@ class KuramotoInteractiveApp:
 
     def _get_colors(self):
         """
-        Calcule les couleurs des oscillateurs correspondant à leur fréquence :
-        - Si gamma > 0 : fréquence intrinsèque omega_i (identité spectrale).
-        - Si gamma == 0 : vitesse angulaire instantanée dphi/dt (permet de visualiser les clusters).
+        Calcule les couleurs des oscillateurs selon leur écart à la fréquence moyenne :
+        - Plus rouge lorsque la fréquence de l'oscillateur est proche de la fréquence moyenne.
+        - Plus bleue lorsqu'elle s'en éloigne.
         """
-        if self.gamma > 0.0:
-            norm = (self.omega - self.omega_0) / (2.5 * self.gamma + 1e-5)
-        else:
-            spread = max(0.15, self.k * 0.35)
-            norm = (self.dphi - self.omega_0) / spread
-        norm = np.clip(norm, -1.0, 1.0)
-        return plt.cm.coolwarm((norm + 1.0) / 2.0)
+        mean_freq = float(np.mean(self.dphi)) if len(self.dphi) > 0 else self.omega_0
+        diff = np.abs(self.dphi - mean_freq)
+        scale = max(0.25, float(np.max(diff)))
+        norm = np.clip(1.0 - (diff / scale), 0.0, 1.0)
+        return plt.cm.coolwarm(norm)
 
     def _create_scatter(self):
         colors = self._get_colors()
@@ -423,57 +421,57 @@ class KuramotoInteractiveApp:
         self.line_r_inf = self.ax_graph.axhline(1.0, color=self.c_sync, linestyle=':', linewidth=1.8, label=r"$r_\infty$ théorique")
         self.ax_graph.legend(loc='lower right', facecolor=self.c_card, edgecolor='#334155', labelcolor=self.c_text, fontsize=8)
 
-        # 2b. Vue distribution de densité des fréquences g(dphi/dt) lorsque tau > 0
+        # 2b. Vue distribution de l'écart à la phase moyenne theta - psi lorsque tau > 0
         self.ax_hist = self.fig.add_axes(pos_center, facecolor=self.c_card)
-        self.ax_hist.set_title(r"Distribution des fréquences instantanées $g(\dot{\theta})$", color=self.c_text, fontsize=11, pad=10, fontweight="bold")
-        self.ax_hist.set_xlabel(r"Fréquence angulaire $\dot{\theta}$ (rad/s)", color=self.c_muted, fontsize=9)
-        self.ax_hist.set_ylabel(r"Densité de probabilité $g(\dot{\theta})$", color=self.c_muted, fontsize=9)
+        self.ax_hist.set_title(r"Distribution de l'écart à la phase moyenne $\theta - \psi$", color=self.c_text, fontsize=11, pad=10, fontweight="bold")
+        self.ax_hist.set_xlabel(r"Écart de phase $\theta - \psi$ (rad)", color=self.c_muted, fontsize=9)
+        self.ax_hist.set_ylabel(r"Densité de probabilité $\rho(\theta - \psi)$", color=self.c_muted, fontsize=9)
+        self.ax_hist.set_xlim(-np.pi, np.pi)
+        self.ax_hist.set_ylim(0.0, 1.8)
+        self.ax_hist.set_xticks([-np.pi, -0.5 * np.pi, 0.0, 0.5 * np.pi, np.pi])
+        self.ax_hist.set_xticklabels([r'$-\pi$', r'$-\pi/2$', r'$0$ $(\psi)$', r'$\pi/2$', r'$\pi$'], color=self.c_text, fontsize=9)
         self.ax_hist.tick_params(colors=self.c_muted, labelsize=8)
         for spine in self.ax_hist.spines.values():
             spine.set_color("#334155")
         self.ax_hist.grid(True, color="#1e293b", linestyle="--", alpha=0.7)
 
-        # Configuration de l'histogramme des fréquences
-        self.n_hist_bins = 36
-        self.hist_half_width = max(0.8, 1.25 * (self.k + 2.5 * max(self.gamma, 0.1)))
-        init_edges = np.linspace(self.omega_0 - self.hist_half_width, self.omega_0 + self.hist_half_width, self.n_hist_bins + 1)
-        init_centers = 0.5 * (init_edges[:-1] + init_edges[1:])
-        init_width = init_edges[1] - init_edges[0]
-        init_counts = np.ones(self.n_hist_bins) / (2.0 * self.hist_half_width)
+        # Configuration de l'histogramme de phase relative sur [-pi, pi]
+        self.hist_bin_edges = np.linspace(-np.pi, np.pi, 37)
+        self.hist_bin_centers = 0.5 * (self.hist_bin_edges[:-1] + self.hist_bin_edges[1:])
+        self.hist_bin_width = self.hist_bin_edges[1] - self.hist_bin_edges[0]
+        init_counts = np.ones(36) / (2.0 * np.pi)
 
         self.hist_bars = self.ax_hist.bar(
-            init_centers, init_counts,
-            width=init_width * 0.88,
+            self.hist_bin_centers, init_counts,
+            width=self.hist_bin_width * 0.88,
             color=self.c_accent,
             alpha=0.45,
             edgecolor=self.c_accent,
             linewidth=0.9,
-            label=r"Densité $g(\dot{\theta})$"
+            label=r"Densité $\rho(\theta - \psi)$"
         )
         self.line_density, = self.ax_hist.plot(
-            init_centers, init_counts,
+            self.hist_bin_centers, init_counts,
             color=self.c_accent,
             linewidth=2.2,
             label=r"Profil lissé"
         )
-        self.line_w0 = self.ax_hist.axvline(
-            self.omega_0,
-            color=self.c_muted,
-            linestyle="--",
-            linewidth=1.6,
-            alpha=0.85,
-            label=r"$\omega_0$ nominale"
-        )
-        self.line_mean_freq = self.ax_hist.axvline(
-            self.omega_0,
+        self.line_ref_zero = self.ax_hist.axvline(
+            0.0,
             color=self.c_gold,
-            linestyle="-",
+            linestyle="--",
             linewidth=2.0,
-            label=r"Moyenne $\langle\dot{\theta}\rangle$"
+            label=r"Phase moyenne $\psi$ ($0$)"
+        )
+        self.line_unif = self.ax_hist.axhline(
+            1.0 / (2.0 * np.pi),
+            color=self.c_muted,
+            linestyle=":",
+            linewidth=1.4,
+            alpha=0.85,
+            label=r"Incohérence ($1/2\pi$)"
         )
         self.ax_hist.legend(loc="upper right", facecolor=self.c_card, edgecolor="#334155", labelcolor=self.c_text, fontsize=8)
-        self.ax_hist.set_xlim(self.omega_0 - self.hist_half_width, self.omega_0 + self.hist_half_width)
-        self.ax_hist.set_ylim(0.0, 2.0)
 
 
         # Affichage initial conditionné par w0_tau
@@ -720,7 +718,6 @@ class KuramotoInteractiveApp:
             self.omega = np.full(self.n, self.omega_0)
         else:
             self.omega = self.omega_0 + self.delta_omega
-        self.hist_half_width = max(0.8, 1.25 * (self.k + 2.5 * max(self.gamma, 0.1)))
         self._update_diag_marker()
 
     def _on_k_over_w0_changed(self, val):
@@ -769,46 +766,17 @@ class KuramotoInteractiveApp:
         self._rebuild_scatter()
         self._update_diag_marker()
 
-    def _update_freq_histogram(self):
-        """Met à jour l'histogramme de densité des fréquences instantanées dphi/dt."""
-        freqs = self.dphi
-        mean_f = float(np.mean(freqs)) if len(freqs) > 0 else self.omega_0
-        std_f = float(np.std(freqs)) if len(freqs) > 0 else 0.0
+    def _update_delta_phase_histogram(self, psi):
+        """Met à jour l'histogramme de densité de l'écart à la phase moyenne theta - psi."""
+        delta_phi = (self.phi - psi + np.pi) % (2.0 * np.pi) - np.pi
+        counts, _ = np.histogram(delta_phi, bins=self.hist_bin_edges, density=True)
 
-        # Demi-largeur requise autour de omega_0
-        max_dev = float(np.max(np.abs(freqs - self.omega_0))) if len(freqs) > 0 else 0.5
-        target_hw = max(0.6, 1.25 * max(max_dev, self.k * 0.8 + 2.0 * self.gamma, 0.4))
-
-        if target_hw > self.hist_half_width:
-            self.hist_half_width = target_hw
-        elif target_hw < self.hist_half_width * 0.65:
-            self.hist_half_width = 0.96 * self.hist_half_width + 0.04 * target_hw
-
-        hw = self.hist_half_width
-        center = self.omega_0
-        x_min = center - hw
-        x_max = center + hw
-
-        edges = np.linspace(x_min, x_max, self.n_hist_bins + 1)
-        centers = 0.5 * (edges[:-1] + edges[1:])
-        width = edges[1] - edges[0]
-
-        counts, _ = np.histogram(freqs, bins=edges, density=True)
-
-        for rect, c, h in zip(self.hist_bars, centers, counts):
-            rect.set_x(c - width * 0.44)
-            rect.set_width(width * 0.88)
+        for rect, h in zip(self.hist_bars, counts):
             rect.set_height(h)
 
-        # Profil lissé par filtrage gaussien (mode nearest pour profil non périodique)
-        smooth_counts = gaussian_filter1d(counts, sigma=1.0, mode="nearest")
-        self.line_density.set_data(centers, smooth_counts)
-
-        # Ligne de la pulsation nominale w0 et de la fréquence moyenne instantanée
-        self.line_w0.set_xdata([self.omega_0, self.omega_0])
-        self.line_mean_freq.set_xdata([mean_f, mean_f])
-
-        self.ax_hist.set_xlim(x_min, x_max)
+        # Profil lissé par filtrage gaussien circulaire (mode wrap sur [-pi, pi])
+        smooth_counts = gaussian_filter1d(counts, sigma=1.2, mode="wrap")
+        self.line_density.set_data(self.hist_bin_centers, smooth_counts)
 
         # Ajustement dynamique de l'axe vertical Y
         max_h = float(np.max(counts)) if len(counts) > 0 else 1.0
@@ -816,8 +784,6 @@ class KuramotoInteractiveApp:
         target_top = max(1.5, max_h * 1.15)
         if abs(current_top - target_top) > 0.25:
             self.ax_hist.set_ylim(0.0, target_top)
-
-        return mean_f, std_f
 
     def _update_graph_r(self):
         """Met à jour le tracé temporel de r(t) et l'asymptote r_inf."""
@@ -880,15 +846,14 @@ class KuramotoInteractiveApp:
         self.bary_pt.set_data([xb], [yb])
 
         # Alternance selon retard tau :
-        # Alternance selon retard tau :
-        # - Si tau > 0 : histogramme de densité des fréquences g(dphi/dt)
+        # - Si tau > 0 : histogramme de densité de l'écart à la phase moyenne theta - psi
         # - Si tau == 0 : tracé de l'évolution temporelle de r(t)
         is_delayed = (self.w0_tau > 1e-4)
         if is_delayed:
             if not self.ax_hist.get_visible():
                 self.ax_graph.set_visible(False)
                 self.ax_hist.set_visible(True)
-            mean_f, std_f = self._update_freq_histogram()
+            self._update_delta_phase_histogram(psi)
             kc = 2.0 * self.gamma
             r_inf = 1.0 if (self.gamma == 0.0 and self.k > 0) else float(np.sqrt(max(0.0, 1.0 - (kc / self.k)))) if (self.k > kc and self.k > 0) else 0.0
         else:
@@ -896,8 +861,9 @@ class KuramotoInteractiveApp:
                 self.ax_hist.set_visible(False)
                 self.ax_graph.set_visible(True)
             r_inf = self._update_graph_r()
-            mean_f = float(np.mean(self.dphi))
-            std_f = float(np.std(self.dphi))
+
+        mean_f = float(np.mean(self.dphi)) if len(self.dphi) > 0 else self.omega_0
+        std_f = float(np.std(self.dphi)) if len(self.dphi) > 0 else 0.0
 
         # Panneau texte dynamique
         self.r = r
@@ -908,7 +874,7 @@ class KuramotoInteractiveApp:
         zone_name = self._get_zone_name(x_diag, y_diag)
         network_info = "Connectome AAL (90 régions HCP)" if self.n == 90 else f"Tous-à-tous ({self.n} oscillateurs)"
         period_str = f"T = {2.0 * np.pi / self.omega_0:.2f} s" if self.omega_0 > 0.05 else "T = ∞ (statique)"
-        view_label = r"Fréquences $g(\dot{\theta})$" if is_delayed else "Évolution r(t)"
+        view_label = r"Écart $\theta - \psi$" if is_delayed else "Évolution r(t)"
         freq_stat = f"⟨ω̇⟩ = {mean_f:.2f} rad/s (σω̇ = {std_f:.3f})"
 
         info_str = (

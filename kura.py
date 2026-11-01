@@ -7,7 +7,7 @@ Développé à partir du travail de TIPE sur la synchronisation des oscillateurs
 Fonctionnalités :
 - Animation fluide en temps réel des oscillateurs sur le cercle unité.
 - Couleurs des oscillateurs sur le cercle reflétant leur fréquence (intrinsèque ou instantanée).
-- Initialisation dynamique des phases : à 0 si w0*tau > 0 (synchronisé), ou aléatoire sur [-pi, pi] si w0*tau == 0.
+- Conservation dynamique continue des phases (aucun reset automatique lors des modifications de retard pour explorer l'hystérèse et la bistabilité).
 - Alternance automatique de la fenêtre centrale :
   * Si tau == 0 : tracé temporel de r(t) (traînée de 32 secondes) avec asymptote théorique r_infini.
   * Si tau > 0 : distribution de densité des fréquences instantanées g(dphi/dt) avec profil lissé, pulsation w0 nominale et fréquence moyenne.
@@ -682,20 +682,16 @@ class KuramotoInteractiveApp:
             spine.set_color('#334155')
 
     def _on_diag_mouse(self, event):
-        """Permet de cliquer ou glisser sur l'image pour fixer K/w0 et w0*tau."""
+        """Permet de cliquer ou glisser sur l'image pour fixer K/w0 et w0*tau sans interrompre la dynamique."""
         if event.inaxes == self.ax_diag and event.button == 1:
             if event.xdata is not None and event.ydata is not None:
                 x_target = float(np.clip(event.xdata, 0.0, 10.0 * np.pi))
                 y_target = float(np.clip(event.ydata, 0.0, 1.0))
                 self.slider_w0_tau.set_val(x_target)
                 self.slider_k_over_w0.set_val(y_target)
-                if event.name == 'button_press_event':
-                    self._init_phases_for_state()
 
     def _on_mouse_release(self, event):
-        """À la fin du relâchement de la souris sur le curseur de retard, réinitialise les phases."""
-        if event.inaxes == self.slider_w0_tau.ax:
-            self._init_phases_for_state()
+        pass
 
     def _update_diag_marker(self):
         """Met à jour le point de position sur le diagramme de Yeung & Strogatz."""
@@ -745,7 +741,6 @@ class KuramotoInteractiveApp:
             self._rebuild_scatter()
 
     def _on_w0_tau_changed(self, val):
-        old_w0_tau = self.w0_tau
         self.w0_tau = float(val)
         self.tau = (self.w0_tau / self.omega_0) if self.omega_0 > 1e-5 else 0.0
         self.delay_steps = int(round(self.tau / self.dt))
@@ -758,12 +753,6 @@ class KuramotoInteractiveApp:
         is_delayed = (self.w0_tau > 1e-4)
         self.ax_graph.set_visible(not is_delayed)
         self.ax_hist.set_visible(is_delayed)
-
-        # Réinitialisation des phases si transition 0 <-> >0 ou grand saut
-        crossed_zero = (old_w0_tau <= 1e-4 and self.w0_tau > 1e-4) or (old_w0_tau > 1e-4 and self.w0_tau <= 1e-4)
-        big_jump = abs(self.w0_tau - old_w0_tau) > 0.4
-        if crossed_zero or big_jump:
-            self._init_phases_for_state()
 
         self._update_diag_marker()
 

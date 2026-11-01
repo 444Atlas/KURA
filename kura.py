@@ -159,7 +159,7 @@ class KuramotoInteractiveApp:
         # Modes de clusters et bande angulaire initiale
         self.cluster_modes = ['2 Clusters', '3 Clusters', '1 Cluster', 'Aléatoire']
         self.cluster_idx = 0  # Démarrage direct en 2 Clusters pour observer plusieurs pics francs
-        self.cluster_band = 0.35  # Largeur de la petite bande angulaire pour les clusters (~20°)
+        self.cluster_band = 0.75  # Largeur de la bande angulaire pour les clusters (~43° ou 0.75 rad)
 
         # Historique glissant pour le tracé de r(t) (32 s à dt=0.005 => 8000 points)
         self.history_len = 8000
@@ -174,7 +174,7 @@ class KuramotoInteractiveApp:
 
     def _apply_cluster_phases(self):
         """Initialise les phases selon le mode de cluster sélectionné, réparties sur une petite bande angulaire."""
-        band = self.cluster_band  # Largeur de la petite bande angulaire (~20° ou 0.35 rad)
+        band = self.cluster_band  # Largeur de la bande angulaire (~43° ou 0.75 rad)
         mode = self.cluster_modes[self.cluster_idx]
         if mode == '2 Clusters':
             self.phi = np.zeros(self.n, dtype=np.float64)

@@ -87,13 +87,13 @@ Un **point marqueur dynamique** sur le diagramme indique en temps réel la posit
 Le dépôt est structuré de cette manière :
 
 - **`Etude_synchronisation_oscillateurs.pdf`** : Support de présentation du TIPE (Paul Laurent-Verleye, session 2025, 30 planches).
-- **`SC_90aal_32HCP.mat`** : Matrice de connectivité structurelle du cerveau humain (atlas AAL, 90 aires corticales/sous-corticales, issue de la boîte à outils *Hopf Delay Toolbox* et du projet Human Connectome Project).
-- **`kura.py`** : Simulateur interactif complet à 3 panneaux :
+- **`kura.py`** : Simulateur interactif complet et 100% autonome à 3 panneaux :
+  - **Matrice de connectivité cérébrale AAL (90 régions)** : issue du Human Connectome Project et de *Hopf_Delay_Toolbox*, directement intégrée sous forme d'un tableau NumPy `C_AAL_90` au sein du script (aucun fichier externe requis).
   - **Panneau gauche (Cercle des phases)** : oscillateurs $\theta_i$ sur le cercle unité, flèche et cercle doré représentant le paramètre d'ordre complexe $\vec{p}(t)$. **La couleur de chaque oscillateur correspond à sa fréquence** (bleu = plus lent, rouge = plus rapide) pour identifier clairement les clusters en zone grise.
   - **Initialisation dynamique des phases** : lorsque $\omega_0\tau > 0$, les phases démarrent à 0 (état synchronisé pour tester la stabilité face au retard) ; lorsque $\omega_0\tau = 0$, les phases sont uniformes sur $[-\pi, \pi]$ (pour observer l'émergence de la synchronisation).
   - **Panneau central (Affichage adaptatif selon le retard)** :
     - **Si $\tau = 0$ ($\omega_0\tau = 0$)** : Tracé en temps réel de l'évolution du paramètre d'ordre $r(t)$ avec une **traînée étendue sur 32 secondes** (4 fois plus longue, 8000 pas) et l'asymptote théorique $r_\infty$ affichée en continu.
-    - **Si $\tau > 0$ ($\omega_0\tau > 0$)** : Bascule automatique vers un **histogramme de densité des phases $\rho(\theta)$** (36 bins sur $[-\pi, \pi]$) avec courbe de densité lissée par filtrage gaussien circulaire, droite verticale de la phase collective moyenne $\psi$, et repère d'incohérence uniforme $1/(2\pi)$. Idéal pour visualiser instantanément la formation des clusters multimodaux en zone grise (régime bistable).
+    - **Si $\tau > 0$ ($\omega_0\tau > 0$)** : Bascule automatique vers un **histogramme de distribution de densité des fréquences instantanées $g(\dot{\theta})$** (36 bins centrés dynamiquement sur $\omega_0$), avec profil lissé, repère vertical de la pulsation nominale $\omega_0$ et de la fréquence moyenne collective $\langle\dot{\theta}\rangle$. Idéal pour visualiser directement le verrouillage en fréquence (pic aigu unique en synchronie) et l'éclatement spectral en clusters en zone grise ou noire.
   - **Panneau droit (Diagramme de Yeung & Strogatz)** : tracé analytique des zones de synchronisation avec sélection au clic/glisser pour fixer $(\omega_0\tau, K/\omega_0)$, verrouillé contre les déplacements parasites, à l'échelle exacte de la publication et assorti au thème sombre.
   - **Curseur de pulsation $\omega_0 \in [0, 10]$ rad/s** : contrôle en direct la vitesse angulaire réelle de rotation des oscillateurs ($T = 2\pi/\omega_0$).
   - **Curseur de couplage adimensionné $K / \omega_0 \in [0, 1]$** : paramètre vertical du diagramme de stabilité.
@@ -122,11 +122,11 @@ pip install numpy scipy matplotlib
 python3 kura.py
 ```
 
-- **Sélection au clic** : Cliquez directement sur le diagramme de droite (sur une langue noire ou grise) pour voir immédiatement l'impact sur le cercle des phases et la distribution. Les phases sont alors réinitialisées à 0 pour tester si la synchronie résiste au retard.
-- **Bascule automatique de la fenêtre centrale** : Dès que $\omega_0\tau > 0$, la fenêtre centrale affiche l'histogramme de densité des phases $\rho(\theta)$, rendant visibles les pics de synchronisation ou de déphasage en cluster. Dès que $\omega_0\tau = 0$, la fenêtre revient automatiquement au suivi temporel de $r(t)$ sur 32 s avec l'asymptote théorique $r_\infty$.
+- **Sélection au clic** : Cliquez directement sur le diagramme de droite (sur une langue noire ou grise) pour voir immédiatement l'impact sur le cercle des phases et la distribution des fréquences. Les phases sont alors réinitialisées à 0 pour tester si la synchronie résiste au retard.
+- **Bascule automatique de la fenêtre centrale** : Dès que $\omega_0\tau > 0$, la fenêtre centrale affiche le profil spectral $g(\dot{\theta})$ des fréquences instantanées, rendant immédiatement visible le pic de verrouillage collectif ou l'éclatement en clusters multimodaux. Dès que $\omega_0\tau = 0$, la fenêtre revient automatiquement au suivi temporel de $r(t)$ sur 32 s avec l'asymptote théorique $r_\infty$.
 - **Retour à zéro retard** : Remettez $\omega_0\tau = 0$ pour réinitialiser les phases aléatoirement sur $[-\pi, \pi]$ et observer la transition spontanée vers l'ordre.
 - **Suivi temporel long** : À $\tau = 0$, la fenêtre temporelle de $r(t)$ s'étend sur 32 secondes pour analyser le régime stationnaire et la convergence vers $r_\infty$.
-- **Observer les clusters** : En zone grise, les oscillateurs forment des groupes de fréquences et de phases distinctes, identifiables à la fois par leur couleur sur le cercle et par les bosses de densité sur l'histogramme $\rho(\theta)$.
+- **Observer les clusters** : En zone grise, les oscillateurs forment des groupes de fréquences et de phases distinctes, identifiables à la fois par leur couleur sur le cercle et par les pics distincts sur l'histogramme des fréquences $g(\dot{\theta})$.
 - **Ajuster la vitesse de rotation** : Modifiez $\omega_0$ pour faire tourner les oscillateurs à la vitesse souhaitée (par exemple $\omega_0 = 1.0$ rad/s $\implies$ période $T = 6.28$ s, vérifiable au chronomètre).
 - **Forçage $N = 90$** : Dès que $\omega_0\tau$ est modifié, la simulation bascule sur la matrice de connectivité structurelle cérébrale AAL à 90 régions.
 

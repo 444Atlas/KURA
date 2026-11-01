@@ -156,15 +156,10 @@ class KuramotoInteractiveApp:
         self.last_real_time = None
         self.time_accumulator = 0.0
 
-        # Modes de clusters et réseau de connectivité
+        # Modes de clusters et bande angulaire initiale
         self.cluster_modes = ['2 Clusters', '3 Clusters', '1 Cluster', 'Aléatoire']
         self.cluster_idx = 0  # Démarrage direct en 2 Clusters pour observer plusieurs pics francs
-
-        self.network_modes = ['Tous-à-tous', 'Connectome AAL']
-        self.network_idx = 0  # Mode Tous-à-tous (stabilité mathématique prouvée des attracteurs multi-clusters)
-
-        # Chargement de la matrice de connectivité structurelle AAL (90 régions)
-        self.C_aal = self._load_structural_connectivity()
+        self.cluster_band = 0.35  # Largeur de la petite bande angulaire pour les clusters (~20°)
 
         # Historique glissant pour le tracé de r(t) (32 s à dt=0.005 => 8000 points)
         self.history_len = 8000
@@ -177,25 +172,23 @@ class KuramotoInteractiveApp:
         # Configuration de l'interface graphique
         self._init_gui()
 
-    def _load_structural_connectivity(self):
-        """Retourne la matrice de connectivité structurelle AAL 90 (Connectome HCP 90 régions)."""
-        return np.copy(C_AAL_90)
-
     def _apply_cluster_phases(self):
-        """Initialise les phases selon le mode de cluster sélectionné."""
+        """Initialise les phases selon le mode de cluster sélectionné, réparties sur une petite bande angulaire."""
+        band = self.cluster_band  # Largeur de la petite bande angulaire (~20° ou 0.35 rad)
         mode = self.cluster_modes[self.cluster_idx]
         if mode == '2 Clusters':
             self.phi = np.zeros(self.n, dtype=np.float64)
-            self.phi[self.n // 2:] = np.pi
-            self.phi += 0.03 * np.random.randn(self.n)
+            n1 = self.n // 2
+            self.phi[:n1] = np.random.uniform(-band / 2.0, band / 2.0, n1)
+            self.phi[n1:] = np.pi + np.random.uniform(-band / 2.0, band / 2.0, self.n - n1)
         elif mode == '3 Clusters':
             self.phi = np.zeros(self.n, dtype=np.float64)
             c_size = self.n // 3
-            self.phi[c_size:2 * c_size] = 2.0 * np.pi / 3.0
-            self.phi[2 * c_size:] = 4.0 * np.pi / 3.0
-            self.phi += 0.03 * np.random.randn(self.n)
+            self.phi[:c_size] = np.random.uniform(-band / 2.0, band / 2.0, c_size)
+            self.phi[c_size:2 * c_size] = (2.0 * np.pi / 3.0) + np.random.uniform(-band / 2.0, band / 2.0, c_size)
+            self.phi[2 * c_size:] = (4.0 * np.pi / 3.0) + np.random.uniform(-band / 2.0, band / 2.0, self.n - 2 * c_size)
         elif mode == '1 Cluster':
-            self.phi = np.zeros(self.n, dtype=np.float64) + 0.03 * np.random.randn(self.n)
+            self.phi = np.random.uniform(-band / 2.0, band / 2.0, self.n)
         else:  # 'Aléatoire'
             self.phi = np.random.uniform(-np.pi, np.pi, self.n)
 
@@ -250,12 +243,9 @@ class KuramotoInteractiveApp:
         # Vitesses instantanées initiales
         self.dphi = np.copy(self.omega)
 
-        # Matrice de connectivité adaptée au mode réseau choisi
-        if self.network_modes[self.network_idx] == 'Connectome AAL' and self.n == 90 and self.C_aal is not None:
-            self.C = np.copy(self.C_aal)
-        else:
-            self.C = np.ones((self.n, self.n), dtype=np.float64)
-            np.fill_diagonal(self.C, 0.0)
+        # Réseau toujours en Tous-à-tous (couplage global sans auto-couplage)
+        self.C = np.ones((self.n, self.n), dtype=np.float64)
+        np.fill_diagonal(self.C, 0.0)
 
         # Buffer circulaire d'historique pour le retard tau (jusqu'à 10*pi s)
         self.max_buf = int(np.ceil(10.0 * np.pi / self.dt)) + 100
@@ -279,12 +269,6 @@ class KuramotoInteractiveApp:
         self.time = 0.0
         self.last_real_time = None
         self.time_accumulator = 0.0
-
-        if hasattr(self, 'scat') and self.scat is not None:
-            x = np.cos(self.phi)
-            y = np.sin(self.phi)
-            self.scat.set_offsets(np.column_stack((x, y)))
-            self.scat.set_facecolor(self._get_colors())
 
         if hasattr(self, 'scat') and self.scat is not None:
             x = np.cos(self.phi)
@@ -703,23 +687,18 @@ class KuramotoInteractiveApp:
         self._style_widget(self.slider_w0_tau, ax_slider_tau)
         self.slider_w0_tau.on_changed(self._on_w0_tau_changed)
 
-        # 4 boutons : Clusters, Réseau, Pause, Reset
-        ax_btn_cluster = self.fig.add_axes([0.71, 0.125, 0.125, 0.065], facecolor=self.c_card)
-        self.btn_cluster = Button(ax_btn_cluster, self.cluster_modes[self.cluster_idx], color=self.c_card, hovercolor='#334155')
+        # 3 boutons : Clusters, Pause, Reset
+        ax_btn_cluster = self.fig.add_axes([0.71, 0.125, 0.25, 0.065], facecolor=self.c_card)
+        self.btn_cluster = Button(ax_btn_cluster, f'Clusters : {self.cluster_modes[self.cluster_idx]}', color=self.c_card, hovercolor='#334155')
         self._style_button(self.btn_cluster, self.c_purple)
         self.btn_cluster.on_clicked(self._on_cluster_clicked)
 
-        ax_btn_network = self.fig.add_axes([0.85, 0.125, 0.125, 0.065], facecolor=self.c_card)
-        self.btn_network = Button(ax_btn_network, self.network_modes[self.network_idx], color=self.c_card, hovercolor='#334155')
-        self._style_button(self.btn_network, self.c_sync)
-        self.btn_network.on_clicked(self._on_network_clicked)
-
-        ax_btn_pause = self.fig.add_axes([0.71, 0.045, 0.125, 0.065], facecolor=self.c_card)
+        ax_btn_pause = self.fig.add_axes([0.71, 0.045, 0.12, 0.065], facecolor=self.c_card)
         self.btn_pause = Button(ax_btn_pause, 'Pause', color=self.c_card, hovercolor='#334155')
         self._style_button(self.btn_pause, self.c_accent)
         self.btn_pause.on_clicked(self._toggle_pause)
 
-        ax_btn_reset = self.fig.add_axes([0.85, 0.045, 0.125, 0.065], facecolor=self.c_card)
+        ax_btn_reset = self.fig.add_axes([0.84, 0.045, 0.12, 0.065], facecolor=self.c_card)
         self.btn_reset = Button(ax_btn_reset, 'Reset', color=self.c_card, hovercolor='#334155')
         self._style_button(self.btn_reset, self.c_gold)
         self.btn_reset.on_clicked(self._reset)
@@ -746,15 +725,7 @@ class KuramotoInteractiveApp:
         """Fait défiler les modes de clusters (2 Clusters -> 3 Clusters -> 1 Cluster -> Aléatoire)."""
         self.cluster_idx = (self.cluster_idx + 1) % len(self.cluster_modes)
         mode = self.cluster_modes[self.cluster_idx]
-        self.btn_cluster.label.set_text(mode)
-
-        # Si l'utilisateur choisit 2 ou 3 clusters et qu'on était sur le connectome,
-        # basculer sur Tous-à-tous pour garantir la stabilité théorique des clusters
-        if mode in ('2 Clusters', '3 Clusters') and self.network_modes[self.network_idx] == 'Connectome AAL':
-            self.network_idx = 0
-            self.btn_network.label.set_text(self.network_modes[self.network_idx])
-            self.C = np.ones((self.n, self.n), dtype=np.float64)
-            np.fill_diagonal(self.C, 0.0)
+        self.btn_cluster.label.set_text(f'Clusters : {mode}')
 
         self._apply_cluster_phases()
         self.history = np.tile(self.phi, (self.max_buf, 1))
@@ -765,23 +736,6 @@ class KuramotoInteractiveApp:
         self.time = 0.0
         self.last_real_time = None
         self.time_accumulator = 0.0
-        self._rebuild_scatter()
-        self.fig.canvas.draw_idle()
-
-    def _on_network_clicked(self, event=None):
-        """Bascule entre réseau Tous-à-tous et Connectome AAL (HCP 90 régions)."""
-        self.network_idx = (self.network_idx + 1) % len(self.network_modes)
-        mode = self.network_modes[self.network_idx]
-        self.btn_network.label.set_text(mode)
-
-        if mode == 'Connectome AAL':
-            if self.n != 90:
-                self.slider_n.set_val(90)
-            self.C = np.copy(self.C_aal)
-        else:
-            self.C = np.ones((self.n, self.n), dtype=np.float64)
-            np.fill_diagonal(self.C, 0.0)
-
         self._rebuild_scatter()
         self.fig.canvas.draw_idle()
 
@@ -840,9 +794,6 @@ class KuramotoInteractiveApp:
         new_n = int(round(val))
         if new_n != self.n:
             self.n = new_n
-            if self.network_modes[self.network_idx] == 'Connectome AAL' and self.n != 90:
-                self.network_idx = 0
-                self.btn_network.label.set_text(self.network_modes[self.network_idx])
             self._init_physics()
             self._rebuild_scatter()
 
@@ -850,10 +801,6 @@ class KuramotoInteractiveApp:
         self.w0_tau = float(val)
         self.tau = (self.w0_tau / self.omega_0) if self.omega_0 > 1e-5 else 0.0
         self.delay_steps = int(round(self.tau / self.dt))
-
-        # Ne forcer N=90 QUE si l'on est en mode Connectome
-        if self.network_modes[self.network_idx] == 'Connectome AAL' and self.n != 90:
-            self.slider_n.set_val(90)
 
         # Alternance automatique de la fenêtre centrale (r(t) si tau==0, histogramme si tau>0)
         is_delayed = (self.w0_tau > 1e-4)
@@ -989,8 +936,7 @@ class KuramotoInteractiveApp:
         y_diag = self.k_over_w0
         zone_name = self._get_zone_name(x_diag, y_diag)
 
-        cur_net = self.network_modes[self.network_idx]
-        net_str = "Connectome AAL (90 régions)" if cur_net == 'Connectome AAL' else f"Tous-à-tous ({self.n} osc.)"
+        net_str = f"Tous-à-tous ({self.n} osc.)"
         period_str = f"T = {2.0 * np.pi / self.omega_0:.2f} s" if self.omega_0 > 0.05 else "T = ∞ (statique)"
         view_label = rf"Histogramme ({state_type})" if is_delayed else "Évolution r(t)"
         freq_stat = f"⟨ω̇⟩ = {mean_f:.2f} rad/s (σω̇ = {std_f:.3f})"

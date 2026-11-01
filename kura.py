@@ -156,6 +156,13 @@ class KuramotoInteractiveApp:
         self.last_real_time = None
         self.time_accumulator = 0.0
 
+        # Modes de clusters et réseau de connectivité
+        self.cluster_modes = ['2 Clusters', '3 Clusters', '1 Cluster', 'Aléatoire']
+        self.cluster_idx = 0  # Démarrage direct en 2 Clusters pour observer plusieurs pics francs
+
+        self.network_modes = ['Tous-à-tous', 'Connectome AAL']
+        self.network_idx = 0  # Mode Tous-à-tous (stabilité mathématique prouvée des attracteurs multi-clusters)
+
         # Chargement de la matrice de connectivité structurelle AAL (90 régions)
         self.C_aal = self._load_structural_connectivity()
 
@@ -174,12 +181,62 @@ class KuramotoInteractiveApp:
         """Retourne la matrice de connectivité structurelle AAL 90 (Connectome HCP 90 régions)."""
         return np.copy(C_AAL_90)
 
-    def _init_physics(self):
-        """Initialise les phases selon la valeur de w0_tau, les fréquences et le buffer circulaire."""
-        if self.w0_tau > 1e-4:
+    def _apply_cluster_phases(self):
+        """Initialise les phases selon le mode de cluster sélectionné."""
+        mode = self.cluster_modes[self.cluster_idx]
+        if mode == '2 Clusters':
             self.phi = np.zeros(self.n, dtype=np.float64)
-        else:
+            self.phi[self.n // 2:] = np.pi
+            self.phi += 0.03 * np.random.randn(self.n)
+        elif mode == '3 Clusters':
+            self.phi = np.zeros(self.n, dtype=np.float64)
+            c_size = self.n // 3
+            self.phi[c_size:2 * c_size] = 2.0 * np.pi / 3.0
+            self.phi[2 * c_size:] = 4.0 * np.pi / 3.0
+            self.phi += 0.03 * np.random.randn(self.n)
+        elif mode == '1 Cluster':
+            self.phi = np.zeros(self.n, dtype=np.float64) + 0.03 * np.random.randn(self.n)
+        else:  # 'Aléatoire'
             self.phi = np.random.uniform(-np.pi, np.pi, self.n)
+
+        self.phi = (self.phi + np.pi) % (2.0 * np.pi) - np.pi
+
+    def compute_phase_reference(self):
+        """
+        Calcule la référence de phase et les paramètres d'ordre généralisés (Daido) :
+        - r1 : cohérence globale (1 cluster)
+        - r2 : cohérence bipolaire (2 clusters en opposition de phase)
+        - r3 : cohérence tripolaire (3 clusters à 120°)
+        """
+        z1 = np.mean(np.exp(1j * self.phi))
+        r1 = float(np.abs(z1))
+
+        z2 = np.mean(np.exp(2j * self.phi))
+        r2 = float(np.abs(z2))
+
+        z3 = np.mean(np.exp(3j * self.phi))
+        r3 = float(np.abs(z3))
+
+        if r1 >= 0.35:
+            psi_ref = float(np.angle(z1))
+            state_type = "1 Cluster"
+        elif r2 >= 0.4:
+            # Centrage symétrique pour afficher les 2 pics à -pi/2 et +pi/2
+            psi_ref = float(0.5 * np.angle(z2) + 0.5 * np.pi)
+            state_type = "2 Clusters"
+        elif r3 >= 0.4:
+            # Centrage pour afficher 1 pic central à 0 et 2 pics à +/- 2pi/3
+            psi_ref = float((1.0 / 3.0) * np.angle(z3))
+            state_type = "3 Clusters"
+        else:
+            psi_ref = float(np.angle(z1)) if r1 > 1e-4 else 0.0
+            state_type = "Incohérent"
+
+        return psi_ref, r1, r2, r3, state_type
+
+    def _init_physics(self):
+        """Initialise les phases selon le mode de cluster sélectionné, les fréquences et le buffer circulaire."""
+        self._apply_cluster_phases()
 
         # Dispersions intrinsèques des fréquences autour de omega_0
         if self.gamma <= 0.0:
@@ -193,45 +250,41 @@ class KuramotoInteractiveApp:
         # Vitesses instantanées initiales
         self.dphi = np.copy(self.omega)
 
-        # Matrice de connectivité adaptée au nombre d'oscillateurs
-        if self.n == 90 and self.C_aal is not None:
-            self.C = self.C_aal
+        # Matrice de connectivité adaptée au mode réseau choisi
+        if self.network_modes[self.network_idx] == 'Connectome AAL' and self.n == 90 and self.C_aal is not None:
+            self.C = np.copy(self.C_aal)
         else:
             self.C = np.ones((self.n, self.n), dtype=np.float64)
             np.fill_diagonal(self.C, 0.0)
 
         # Buffer circulaire d'historique pour le retard tau (jusqu'à 10*pi s)
         self.max_buf = int(np.ceil(10.0 * np.pi / self.dt)) + 100
-        if self.w0_tau > 1e-4:
-            self.history = np.zeros((self.max_buf, self.n), dtype=np.float64)
-        else:
-            self.history = np.tile(self.phi, (self.max_buf, 1))
+        self.history = np.tile(self.phi, (self.max_buf, 1))
         self.ptr = 0
 
         self.time_history.clear()
         self.r_history.clear()
         self.time = 0.0
-        self.r = 1.0 if self.w0_tau > 1e-4 else 0.0
         self.last_real_time = None
         self.time_accumulator = 0.0
 
     def _init_phases_for_state(self):
-        """Réinitialise les phases : à 0 si w0_tau > 0, ou sur [-pi, pi] si w0_tau == 0."""
-        if self.w0_tau > 1e-4:
-            self.phi = np.zeros(self.n, dtype=np.float64)
-            self.history = np.zeros((self.max_buf, self.n), dtype=np.float64)
-        else:
-            self.phi = np.random.uniform(-np.pi, np.pi, self.n)
-            self.history = np.tile(self.phi, (self.max_buf, 1))
-
+        """Réinitialise les phases selon le mode de cluster courant."""
+        self._apply_cluster_phases()
+        self.history = np.tile(self.phi, (self.max_buf, 1))
         self.ptr = 0
         self.dphi = np.copy(self.omega)
         self.time_history.clear()
         self.r_history.clear()
         self.time = 0.0
-        self.r = 1.0 if self.w0_tau > 1e-4 else 0.0
         self.last_real_time = None
         self.time_accumulator = 0.0
+
+        if hasattr(self, 'scat') and self.scat is not None:
+            x = np.cos(self.phi)
+            y = np.sin(self.phi)
+            self.scat.set_offsets(np.column_stack((x, y)))
+            self.scat.set_facecolor(self._get_colors())
 
         if hasattr(self, 'scat') and self.scat is not None:
             x = np.cos(self.phi)
@@ -650,13 +703,23 @@ class KuramotoInteractiveApp:
         self._style_widget(self.slider_w0_tau, ax_slider_tau)
         self.slider_w0_tau.on_changed(self._on_w0_tau_changed)
 
-        # Boutons Pause et Reset
-        ax_btn_pause = self.fig.add_axes([0.72, 0.08, 0.11, 0.08], facecolor=self.c_card)
+        # 4 boutons : Clusters, Réseau, Pause, Reset
+        ax_btn_cluster = self.fig.add_axes([0.71, 0.125, 0.125, 0.065], facecolor=self.c_card)
+        self.btn_cluster = Button(ax_btn_cluster, self.cluster_modes[self.cluster_idx], color=self.c_card, hovercolor='#334155')
+        self._style_button(self.btn_cluster, self.c_purple)
+        self.btn_cluster.on_clicked(self._on_cluster_clicked)
+
+        ax_btn_network = self.fig.add_axes([0.85, 0.125, 0.125, 0.065], facecolor=self.c_card)
+        self.btn_network = Button(ax_btn_network, self.network_modes[self.network_idx], color=self.c_card, hovercolor='#334155')
+        self._style_button(self.btn_network, self.c_sync)
+        self.btn_network.on_clicked(self._on_network_clicked)
+
+        ax_btn_pause = self.fig.add_axes([0.71, 0.045, 0.125, 0.065], facecolor=self.c_card)
         self.btn_pause = Button(ax_btn_pause, 'Pause', color=self.c_card, hovercolor='#334155')
         self._style_button(self.btn_pause, self.c_accent)
         self.btn_pause.on_clicked(self._toggle_pause)
 
-        ax_btn_reset = self.fig.add_axes([0.85, 0.08, 0.11, 0.08], facecolor=self.c_card)
+        ax_btn_reset = self.fig.add_axes([0.85, 0.045, 0.125, 0.065], facecolor=self.c_card)
         self.btn_reset = Button(ax_btn_reset, 'Reset', color=self.c_card, hovercolor='#334155')
         self._style_button(self.btn_reset, self.c_gold)
         self.btn_reset.on_clicked(self._reset)
@@ -674,10 +737,53 @@ class KuramotoInteractiveApp:
 
     def _style_button(self, btn, text_color):
         btn.label.set_color(text_color)
-        btn.label.set_fontsize(10)
+        btn.label.set_fontsize(9.5)
         btn.label.set_fontweight('bold')
         for spine in btn.ax.spines.values():
             spine.set_color('#334155')
+
+    def _on_cluster_clicked(self, event=None):
+        """Fait défiler les modes de clusters (2 Clusters -> 3 Clusters -> 1 Cluster -> Aléatoire)."""
+        self.cluster_idx = (self.cluster_idx + 1) % len(self.cluster_modes)
+        mode = self.cluster_modes[self.cluster_idx]
+        self.btn_cluster.label.set_text(mode)
+
+        # Si l'utilisateur choisit 2 ou 3 clusters et qu'on était sur le connectome,
+        # basculer sur Tous-à-tous pour garantir la stabilité théorique des clusters
+        if mode in ('2 Clusters', '3 Clusters') and self.network_modes[self.network_idx] == 'Connectome AAL':
+            self.network_idx = 0
+            self.btn_network.label.set_text(self.network_modes[self.network_idx])
+            self.C = np.ones((self.n, self.n), dtype=np.float64)
+            np.fill_diagonal(self.C, 0.0)
+
+        self._apply_cluster_phases()
+        self.history = np.tile(self.phi, (self.max_buf, 1))
+        self.ptr = 0
+        self.dphi = np.copy(self.omega)
+        self.time_history.clear()
+        self.r_history.clear()
+        self.time = 0.0
+        self.last_real_time = None
+        self.time_accumulator = 0.0
+        self._rebuild_scatter()
+        self.fig.canvas.draw_idle()
+
+    def _on_network_clicked(self, event=None):
+        """Bascule entre réseau Tous-à-tous et Connectome AAL (HCP 90 régions)."""
+        self.network_idx = (self.network_idx + 1) % len(self.network_modes)
+        mode = self.network_modes[self.network_idx]
+        self.btn_network.label.set_text(mode)
+
+        if mode == 'Connectome AAL':
+            if self.n != 90:
+                self.slider_n.set_val(90)
+            self.C = np.copy(self.C_aal)
+        else:
+            self.C = np.ones((self.n, self.n), dtype=np.float64)
+            np.fill_diagonal(self.C, 0.0)
+
+        self._rebuild_scatter()
+        self.fig.canvas.draw_idle()
 
     def _on_diag_mouse(self, event):
         """Permet de cliquer ou glisser sur l'image pour fixer K/w0 et w0*tau sans interrompre la dynamique."""
@@ -734,6 +840,9 @@ class KuramotoInteractiveApp:
         new_n = int(round(val))
         if new_n != self.n:
             self.n = new_n
+            if self.network_modes[self.network_idx] == 'Connectome AAL' and self.n != 90:
+                self.network_idx = 0
+                self.btn_network.label.set_text(self.network_modes[self.network_idx])
             self._init_physics()
             self._rebuild_scatter()
 
@@ -742,8 +851,8 @@ class KuramotoInteractiveApp:
         self.tau = (self.w0_tau / self.omega_0) if self.omega_0 > 1e-5 else 0.0
         self.delay_steps = int(round(self.tau / self.dt))
 
-        # Forcer le nombre d'oscillateurs à 90 lors du déplacement du retard
-        if self.n != 90:
+        # Ne forcer N=90 QUE si l'on est en mode Connectome
+        if self.network_modes[self.network_idx] == 'Connectome AAL' and self.n != 90:
             self.slider_n.set_val(90)
 
         # Alternance automatique de la fenêtre centrale (r(t) si tau==0, histogramme si tau>0)
@@ -766,9 +875,9 @@ class KuramotoInteractiveApp:
         self._rebuild_scatter()
         self._update_diag_marker()
 
-    def _update_delta_phase_histogram(self, psi):
-        """Met à jour l'histogramme de densité de l'écart à la phase moyenne theta - psi."""
-        delta_phi = (self.phi - psi + np.pi) % (2.0 * np.pi) - np.pi
+    def _update_delta_phase_histogram(self, psi_ref, state_type):
+        """Met à jour l'histogramme de densité de l'écart à la phase de référence."""
+        delta_phi = (self.phi - psi_ref + np.pi) % (2.0 * np.pi) - np.pi
         counts, _ = np.histogram(delta_phi, bins=self.hist_bin_edges, density=True)
 
         for rect, h in zip(self.hist_bars, counts):
@@ -778,10 +887,16 @@ class KuramotoInteractiveApp:
         smooth_counts = gaussian_filter1d(counts, sigma=1.2, mode="wrap")
         self.line_density.set_data(self.hist_bin_centers, smooth_counts)
 
+        # Titre dynamique indiquant le régime de synchronisation observé
+        self.ax_hist.set_title(
+            rf"Distribution des phases $\theta - \psi$ ({state_type})",
+            color=self.c_text, fontsize=11, pad=10, fontweight="bold"
+        )
+
         # Ajustement dynamique de l'axe vertical Y
         max_h = float(np.max(counts)) if len(counts) > 0 else 1.0
         current_top = self.ax_hist.get_ylim()[1]
-        target_top = max(1.5, max_h * 1.15)
+        target_top = max(1.8, max_h * 1.15)
         if abs(current_top - target_top) > 0.25:
             self.ax_hist.set_ylim(0.0, target_top)
 
@@ -845,6 +960,9 @@ class KuramotoInteractiveApp:
         self.vec_line.set_data([0, xb], [0, yb])
         self.bary_pt.set_data([xb], [yb])
 
+        # Calcul des grandeurs d'ordre classique et multi-clusters
+        psi_ref, r1, r2, r3, state_type = self.compute_phase_reference()
+
         # Alternance selon retard tau :
         # - Si tau > 0 : histogramme de densité de l'écart à la phase moyenne theta - psi
         # - Si tau == 0 : tracé de l'évolution temporelle de r(t)
@@ -853,7 +971,7 @@ class KuramotoInteractiveApp:
             if not self.ax_hist.get_visible():
                 self.ax_graph.set_visible(False)
                 self.ax_hist.set_visible(True)
-            self._update_delta_phase_histogram(psi)
+            self._update_delta_phase_histogram(psi_ref, state_type)
             kc = 2.0 * self.gamma
             r_inf = 1.0 if (self.gamma == 0.0 and self.k > 0) else float(np.sqrt(max(0.0, 1.0 - (kc / self.k)))) if (self.k > kc and self.k > 0) else 0.0
         else:
@@ -867,18 +985,24 @@ class KuramotoInteractiveApp:
 
         # Panneau texte dynamique
         self.r = r
-        status_label = "Synchronisé" if r > 0.85 else "Partiellement synchrone" if r > 0.35 else "Incohérent"
-
         x_diag = self.w0_tau
         y_diag = self.k_over_w0
         zone_name = self._get_zone_name(x_diag, y_diag)
-        network_info = "Connectome AAL (90 régions HCP)" if self.n == 90 else f"Tous-à-tous ({self.n} oscillateurs)"
+
+        cur_net = self.network_modes[self.network_idx]
+        net_str = "Connectome AAL (90 régions)" if cur_net == 'Connectome AAL' else f"Tous-à-tous ({self.n} osc.)"
         period_str = f"T = {2.0 * np.pi / self.omega_0:.2f} s" if self.omega_0 > 0.05 else "T = ∞ (statique)"
-        view_label = r"Écart $\theta - \psi$" if is_delayed else "Évolution r(t)"
+        view_label = rf"Histogramme ({state_type})" if is_delayed else "Évolution r(t)"
         freq_stat = f"⟨ω̇⟩ = {mean_f:.2f} rad/s (σω̇ = {std_f:.3f})"
 
+        order_str = f"r₁ = {r1:.2f}"
+        if state_type == "2 Clusters":
+            order_str += f" | r₂ = {r2:.2f}"
+        elif state_type == "3 Clusters":
+            order_str += f" | r₃ = {r3:.2f}"
+
         info_str = (
-            f"Régime : {status_label}   |   Réseau : {network_info}   |   Vue centrale : {view_label}\n"
+            f"Régime : {state_type} ({order_str})   |   Réseau : {net_str}   |   Vue : {view_label}\n"
             f"Paramètres réduits : K/ω₀ = {self.k_over_w0:.2f}   |   ω₀·τ = {self.w0_tau / np.pi:.2f}π   |   Position : {zone_name}\n"
             f"Physique : ω₀ = {self.omega_0:.2f} rad/s ({period_str})   |   K = {self.k:.2f}   |   τ = {self.tau:.2f} s   |   Cohérence r = {r:.3f}   |   {freq_stat}"
         )
@@ -907,7 +1031,7 @@ def main():
         gamma=0.0,
         omega_0=1.0,
         k_over_w0=0.8,
-        w0_tau=0.0,
+        w0_tau=2.0,
         dt=0.005
     )
     app.run()

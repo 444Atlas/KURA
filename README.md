@@ -95,12 +95,14 @@ Le dépôt est structuré de cette manière :
     - **Si $\tau = 0$ ($\omega_0\tau = 0$)** : Tracé en temps réel de l'évolution du paramètre d'ordre $r(t)$ avec une **traînée étendue sur 32 secondes** (4 fois plus longue, 8000 pas) et l'asymptote théorique $r_\infty$ affichée en continu.
     - **Si $\tau > 0$ ($\omega_0\tau > 0$)** : Bascule automatique vers un **histogramme de densité de l'écart à la phase collective moyenne $\rho(\theta - \psi)$** (36 bins sur $[-\pi, \pi]$), avec profil lissé par filtrage gaussien circulaire (`wrap`), repère fixe à 0 pour la phase moyenne collective $\psi$, et ligne horizontale d'incohérence uniforme $1/(2\pi)$. Ce repère tournant stabilise le pic synchronisé en 0 (sans défilement rotatif sur l'écran) et met en évidence instantanément les clusters secondaires (par exemple à $\pm\pi$).
   - **Panneau droit (Diagramme de Yeung & Strogatz)** : tracé analytique des zones de synchronisation avec sélection au clic/glisser pour fixer $(\omega_0\tau, K/\omega_0)$, verrouillé contre les déplacements parasites, à l'échelle exacte de la publication et assorti au thème sombre.
+  - **Bouton Clusters (Multi-stabilité & Multi-pics)** : cycle entre `2 Clusters` (antiphase, 2 pics francs à $\pm\pi/2$), `3 Clusters` (tripolaire à $120^\circ$, 3 pics francs à $0$ et $\pm 2\pi/3$), `1 Cluster` (synchronie globale, 1 pic en $0$) et `Aléatoire` (état incohérent/splay).
+  - **Bouton Réseau** : bascule directe entre le réseau global `Tous-à-tous` ($C_{ij} = 1 - \delta_{ij}$, supportant rigoureusement les attracteurs multi-clusters de Yeung & Strogatz) et le `Connectome AAL` (matrice anatomique de 90 régions HCP).
   - **Curseur de pulsation $\omega_0 \in [0, 10]$ rad/s** : contrôle en direct la vitesse angulaire réelle de rotation des oscillateurs ($T = 2\pi/\omega_0$).
   - **Curseur de couplage adimensionné $K / \omega_0 \in [0, 1]$** : paramètre vertical du diagramme de stabilité.
-  - **Curseur de retard adimensionné $\omega_0 \cdot \tau \in [0, 10\pi]$** : paramètre horizontal du diagramme de stabilité. Tout déplacement force automatiquement $N = 90$ pour activer le connectome AAL.
+  - **Curseur de retard adimensionné $\omega_0 \cdot \tau \in [0, 10\pi]$** : paramètre horizontal du diagramme de stabilité.
   - **Synchronisation temps réel stricte** : l'intégration physique à pas fixe $dt = 0.005$ s est asservie à `time.perf_counter()`, garantissant qu'une seconde simulée équivaut rigoureusement à une seconde d'horloge réelle.
   - **Curseur de dispersion $\gamma \in [0, 2]$** et **oscillateurs $N \in [1, 1000]$**.
-  - **Contrôles** : Boutons *Pause / Reprendre* et *Reset*.
+  - **Contrôles** : 4 boutons alignés (`Clusters`, `Réseau`, `Pause / Reprendre`, `Reset`).
 - **`kuramoto_tipe.py`** : Moteur de simulation vectorisé permettant de reproduire numériquement toutes les figures de la présentation (instantanés du cercle, calcul statistique de $K_c$ avec barres d'incertitude, et relaxation temporelle).
 - **`.gitignore`** : Fichiers temporaires et caches Python exclus.
 
@@ -122,13 +124,17 @@ pip install numpy scipy matplotlib
 python3 kura.py
 ```
 
-- **Sélection au clic & Hystérèse** : Cliquez directement sur le diagramme de droite pour fixer $(K/\omega_0, \omega_0\tau)$ sans couper la dynamique en cours. Vous pouvez ainsi observer l'hystérèse en zone grise : l'état synchronisé est conservé en venant de la zone blanche (fréquence unique $\Omega$), tandis que l'état désynchronisé est conservé en venant de la zone noire (multiplicité de fréquences). Le bouton **Reset** permet de réinitialiser manuellement à tout moment.
-- **Bascule automatique de la fenêtre centrale** : Dès que $\omega_0\tau > 0$, la fenêtre centrale affiche la distribution de l'écart à la phase moyenne collective $\theta - \psi$. En état synchronisé, un pic fixe et stable se dresse en 0 ; en régime bistable / clusters, des pics secondaires déphasés (comme en antiphase à $\pm\pi$) sont immédiatement visibles ; en désordre (zone noire), la distribution s'aplatit autour de $1/(2\pi)$. Dès que $\omega_0\tau = 0$, la fenêtre revient automatiquement au suivi temporel de $r(t)$ sur 32 s avec l'asymptote théorique $r_\infty$.
-- **Retour à zéro retard** : Remettez $\omega_0\tau = 0$ pour réinitialiser les phases aléatoirement sur $[-\pi, \pi]$ et observer la transition spontanée vers l'ordre.
-- **Suivi temporel long** : À $\tau = 0$, la fenêtre temporelle de $r(t)$ s'étend sur 32 secondes pour analyser le régime stationnaire et la convergence vers $r_\infty$.
-- **Observer les clusters** : En zone grise, les oscillateurs forment des groupes de phases distinctes, identifiables à la fois par leur couleur rouge/bleue (proximité à la fréquence moyenne) et par les pics distincts sur l'histogramme de phase relative $\rho(\theta - \psi)$.
-- **Ajuster la vitesse de rotation** : Modifiez $\omega_0$ pour faire tourner les oscillateurs à la vitesse souhaitée (par exemple $\omega_0 = 1.0$ rad/s $\implies$ période $T = 6.28$ s, vérifiable au chronomètre).
-- **Forçage $N = 90$** : Dès que $\omega_0\tau$ est modifié, la simulation bascule sur la matrice de connectivité structurelle cérébrale AAL à 90 régions.
+- **Sélection au clic & Hystérèse** : Cliquez directement sur le diagramme de droite pour fixer $(K/\omega_0, \omega_0\tau)$ sans couper la dynamique en cours. Vous pouvez ainsi explorer les langues de Yeung & Strogatz, la bistabilité en zone grise et la multiplicité des états stationnaires.
+- **Observation de plusieurs pics francs de phase** :
+  - Cliquez sur le bouton violet **`Clusters`** pour naviguer entre :
+    - `2 Clusters` : scinde les oscillateurs en deux groupes opposés ($\Delta\theta = \pi$), générant **deux pics verticaux très hauts et nets** à $-\pi/2$ et $+\pi/2$ ($r_2 \approx 1$).
+    - `3 Clusters` : scinde les oscillateurs en trois groupes équidistants à $120^\circ$, générant **trois pics verticaux nets** à $0$ et $\pm 2\pi/3$ ($r_3 \approx 1$).
+    - `1 Cluster` : état synchrone classique avec un pic unique en $0$ ($r_1 \approx 1$).
+    - `Aléatoire` : phases dispersées uniformément sur $[-\pi, \pi]$ (densité plate autour de $1/(2\pi)$).
+- **Bascule de Réseau (`Tous-à-tous` vs `Connectome AAL`)** :
+  - En réseau **Tous-à-tous**, la symétrie de permutation assure la stabilité stricte des attracteurs à 2 et 3 clusters sous retard temporel $\tau$.
+  - En réseau **Connectome AAL (90 régions HCP)**, la forte hétérogénéité des degrés anatomiques (dispersion de 8,4 à 303,5, ratio supérieur à 36:1) crée une frustration de phase qui détruit les clusters identiques et tend vers un cluster unique ou une décohérence diffuse.
+- **Bascule automatique de la fenêtre centrale** : Dès que $\omega_0\tau > 0$, la fenêtre centrale affiche la distribution de l'écart à la phase collective moyenne $\rho(\theta - \psi)$ avec détection automatique du régime (1 Cluster, 2 Clusters, 3 Clusters ou Incohérent). Dès que $\omega_0\tau = 0$, la fenêtre revient automatiquement au suivi temporel de $r(t)$ sur 32 s avec l'asymptote théorique $r_\infty$.
 
 ### 3. Exécuter les simulations analytiques du TIPE
 
